@@ -1,3 +1,4 @@
+import { ArrowDownToLine } from "lucide-react";
 import type { Photo, PhotoStatus } from "../api";
 import { CartaoFoto, Mascote } from "../design-system";
 import { cn } from "../design-system/lib/utils";
@@ -65,6 +66,15 @@ function PhotoTile({ photo, personOf, selected, onToggle, onOpen }: PhotoTilePro
       {photo.mine && (
         <span className="pointer-events-none absolute left-2 top-2 rounded-pill border-grosso border-tinta bg-accent px-2 py-0.5 font-display text-xs font-semibold text-accent-foreground">
           Você
+        </span>
+      )}
+      {photo.downloaded && (
+        <span
+          className="pointer-events-none absolute bottom-2 right-2 grid size-7 place-items-center rounded-pill border-grosso border-tinta bg-card text-tinta shadow-pop-sm"
+          title="Você já baixou"
+        >
+          <ArrowDownToLine className="size-4" aria-hidden />
+          <span className="sr-only">Você já baixou</span>
         </span>
       )}
     </li>

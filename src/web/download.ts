@@ -9,6 +9,10 @@ export const SHARE_BATCH_MAX_BYTES = 150 * MIB;
 /** The ZIP is read whole into memory before it is saved; above this the person is warned first. */
 export const ZIP_WARNING_BYTES = 500 * MIB;
 
+/** The Worker's limits for one ZIP: entries, and bytes without ZIP64. */
+export const ZIP_MAX_PHOTOS = 1000;
+export const ZIP_MAX_BYTES = 4 * 1024 ** 3 - 64 * MIB;
+
 export const totalBytes = (photos: Photo[]) => photos.reduce((total, photo) => total + photo.sizeBytes, 0);
 
 /** iPhone and iPad, where the share sheet saves to the photo library. iPadOS presents itself as a Mac with touch. */
@@ -45,6 +49,9 @@ export function splitByGroup(photos: Photo[]): Photo[][] {
   for (const photo of photos) byGroup.set(photo.groupId, [...(byGroup.get(photo.groupId) ?? []), photo]);
   return [...byGroup.values()];
 }
+
+/** The photos of one group that fit in one ZIP, taken in order; the rest wait for the next tap. */
+export const firstZipPart = (photos: Photo[]): Photo[] => splitIntoBatches(photos, ZIP_MAX_PHOTOS, ZIP_MAX_BYTES)[0] ?? [];
 
 /** Share batches never mix groups, so a batch the device refuses to share can leave as one ZIP. */
 export const shareBatches = (photos: Photo[]) =>

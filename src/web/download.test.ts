@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { shareBatches, SHARE_BATCH_MAX_BYTES, SHARE_BATCH_MAX_PHOTOS, splitIntoBatches } from "./download";
+import { firstZipPart, shareBatches, SHARE_BATCH_MAX_BYTES, SHARE_BATCH_MAX_PHOTOS, splitIntoBatches, ZIP_MAX_BYTES, ZIP_MAX_PHOTOS } from "./download";
 import { photoOf } from "./testing";
 
 const sized = (sizes: number[], groupId = "g1") => sizes.map((sizeBytes, index) => photoOf({ id: `${groupId}-${index}`, groupId, sizeBytes }));
@@ -30,5 +30,18 @@ describe("shareBatches", () => {
     const half = SHARE_BATCH_MAX_BYTES / 2;
     const batches = shareBatches([...sized(Array(SHARE_BATCH_MAX_PHOTOS + 1).fill(1), "g1"), ...sized([half, half, half], "g2")]);
     expect(batches.map((batch) => batch.map((photo) => photo.groupId).join(""))).toEqual(["g1".repeat(SHARE_BATCH_MAX_PHOTOS), "g1", "g2g2", "g2"]);
+  });
+});
+
+describe("firstZipPart", () => {
+  it("takes, in order, what fits in one ZIP of the Worker", () => {
+    expect(firstZipPart(sized(Array(ZIP_MAX_PHOTOS + 5).fill(1)))).toHaveLength(ZIP_MAX_PHOTOS);
+    const half = ZIP_MAX_BYTES / 2;
+    expect(sizesOf([firstZipPart(sized([half, half, 1]))])).toEqual([[half, half]]);
+    expect(sizesOf([firstZipPart(sized([half, half + 1, 1]))])).toEqual([[half]]);
+  });
+
+  it("is empty for no photo", () => {
+    expect(firstZipPart([])).toEqual([]);
   });
 });

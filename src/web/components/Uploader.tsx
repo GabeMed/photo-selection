@@ -143,11 +143,26 @@ export function Uploader({ groupId, showAction, onUploaded, onSettled }: Uploade
     <section className="flex flex-col gap-3" aria-label="Enviar fotos">
       {isAppleTouchDevice() && (
         <Notice tone="info">
-          <strong>No iPhone ou iPad:</strong> escolhe até <strong>80 fotos por vez</strong>; com mais que isso o iPhone trava ou entrega
-          fotos quebradas. Enquanto um lote sobe, <strong>+ Mais fotos</strong> já aceita o próximo. No seletor, toca em{" "}
-          <strong>Opções</strong> e escolhe o formato <strong>Atual</strong> pra mandar o original. Depois de tocar em Adicionar, o iPhone
-          prepara as fotos sem mostrar nada: espera, pode levar alguns minutos. Deixa a tela ligada e essa aba aberta até o envio acabar.
-          Pra muitas fotos de uma vez, usa o Atalho, logo abaixo.
+          <strong>No iPhone ou iPad:</strong> da galeria, escolhe poucas fotos por vez; com muitas o iPhone fica parado preparando ou
+          entrega fotos quebradas. Deixa a tela ligada e essa aba aberta até o envio acabar.
+          <details className="mt-2">
+            <summary className="min-h-11 cursor-pointer py-2 font-bold underline">Muitas fotos de uma vez? Manda pelo app Arquivos</summary>
+            <ol className="flex list-decimal flex-col gap-2 pl-5">
+              <li>
+                No app Fotos, seleciona as fotos da viagem, toca em compartilhar e escolhe <strong>Exportar Originais Não Modificados</strong>.
+              </li>
+              <li>
+                Salva no app <strong>Arquivos</strong>, numa pasta nova só pra essas fotos. Assim elas sobem na qualidade original; as que vêm
+                do WhatsApp chegam reduzidas.
+              </li>
+              <li>
+                Aqui no site, toca em <strong>Subir fotos</strong> e escolhe <strong>Escolher Arquivos</strong>, não a Fototeca.
+              </li>
+              <li>
+                Abre a pasta, toca nos três pontinhos, <strong>Selecionar</strong>, <strong>Selecionar Tudo</strong> e <strong>Abrir</strong>.
+              </li>
+            </ol>
+          </details>
         </Notice>
       )}
 

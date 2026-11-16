@@ -10,6 +10,7 @@ import {
   photoRow,
   putOriginal,
   randomBytes,
+  requestSlot,
   runCron,
   storedKeys,
   upload,
@@ -24,10 +25,6 @@ async function sha256Hex(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
 async function requestHashedSlot(user: Session, groupId: string, bytes: Uint8Array<ArrayBuffer>, contentHash?: string) {
   const json = { filename: "foto.jpg", contentType: "image/jpeg", sizeBytes: bytes.length, contentHash: contentHash ?? (await sha256Hex(bytes)) };
   return api(`/api/groups/${groupId}/photos`, { as: user, json });
-}
-
-async function uploadLink(user: Session, groupId: string): Promise<string> {
-  return new URL((await json(api(`/api/groups/${groupId}/upload-link`, { as: user, method: "POST" }))).uploadLink).pathname;
 }
 
 async function photoIds(): Promise<string[]> {
@@ -80,6 +77,18 @@ describe("a photo already in the group is not sent again", () => {
     expect(await usage(admin, group.id, ana)).toEqual({ group: 1000, month: 1000 });
   });
 
+  it("finds the duplicate on arrival when the page could not declare a hash", async () => {
+    const { admin, group, friends: [ana, bia] } = await groupWith("Ana", "Bia");
+    const bytes = randomBytes(1000);
+    const first = await upload(ana, group.id, bytes);
+
+    const { photo } = await json(requestSlot(bia, group.id, bytes.length));
+    expect(await json(putOriginal(bia, photo.id, bytes))).toEqual({ duplicate: true, photoId: first });
+    expect(await photoIds()).toEqual([first]);
+    expect(await storedKeys()).toEqual([`g/${group.id}/${first}/original`]);
+    expect(await usage(admin, group.id, bia)).toEqual({ group: 1000, month: 0 });
+  });
+
   it("keeps exactly one of two equal uploads sent at the same time", async () => {
     const { admin, group, friends: [ana, bia] } = await groupWith("Ana", "Bia");
     const bytes = randomBytes(5000);
@@ -95,19 +104,6 @@ describe("a photo already in the group is not sent again", () => {
     const overview = await json(api("/api/admin/overview", { as: admin }));
     expect(overview.groups[0].usedBytes).toBe(5000);
     expect(overview.users.reduce((total: number, user: { monthUsedBytes: number }) => total + user.monthUsedBytes, 0)).toBe(5000);
-  });
-
-  it("discards a duplicate sent through the Shortcut link and gives its space back", async () => {
-    const { admin, group, friends: [ana, bia] } = await groupWith("Ana", "Bia");
-    const bytes = randomBytes(1000);
-    bytes.set([0xff, 0xd8, 0xff, 0xe0]);
-    const first = await upload(ana, group.id, bytes);
-
-    const sent = await api(await uploadLink(bia, group.id), { body: bytes, headers: { "content-length": String(bytes.length) } });
-    expect(await json(sent)).toEqual({ ok: true, duplicate: true, photoId: first });
-    expect(await photoIds()).toEqual([first]);
-    expect(await storedKeys()).toEqual([`g/${group.id}/${first}/original`]);
-    expect(await usage(admin, group.id, bia)).toEqual({ group: 1000, month: 0 });
   });
 
   it("accepts again the bytes of a deleted photo", async () => {

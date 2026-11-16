@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { nowIso } from "./db";
 import { notFound, outliveRequest, type AppEnv, type User } from "./http";
-import { appearsIn, rescore } from "./matching";
+import { appearsIn, isUnclaimed, rescore } from "./matching";
 import { groupUsedBytesSql } from "./quota";
 
 export type PhotoStatus = "enviando" | "recebida" | "processando" | "processada" | "falhou";
@@ -65,6 +65,7 @@ interface GroupSummaryRow extends GroupRow {
   total: number;
   processing: number;
   failed: number;
+  unclaimed: number;
   my_photo_count: number;
 }
 
@@ -79,6 +80,8 @@ export interface GroupSummary {
   quotaBytes: number;
   myPhotoCount: number;
   counts: { total: number; processing: number; failed: number };
+  /** Kept out of `counts`, whose shape the admin overview and its clients already rely on. */
+  unclaimedCount: number;
 }
 
 const countPhotosSql = (condition: string) =>
@@ -99,6 +102,7 @@ export async function loadGroupSummaries(db: D1Database, viewerId: string, selec
               ${countPhotosSql("1")} AS total,
               ${countPhotosSql("p.status IN ('recebida', 'processando')")} AS processing,
               ${countPhotosSql("p.status = 'falhou'")} AS failed,
+              ${countPhotosSql(isUnclaimed)} AS unclaimed,
               ${countPhotosSql(appearsIn("?1"))} AS my_photo_count
        FROM groups g
        WHERE (?2 IS NULL OR g.id = ?2)
@@ -118,6 +122,7 @@ export async function loadGroupSummaries(db: D1Database, viewerId: string, selec
     quotaBytes: row.quota_bytes,
     myPhotoCount: row.my_photo_count,
     counts: { total: row.total, processing: row.processing, failed: row.failed },
+    unclaimedCount: row.unclaimed,
   }));
 }
 
@@ -198,9 +203,9 @@ groupRoutes.get("/groups/:id", async (c) => {
   const user = c.get("user");
   const { id } = await requireMember(c.env.DB, user, c.req.param("id"));
   const [summary] = await loadGroupSummaries(c.env.DB, user.id, { groupId: id, memberOnly: true });
-  const { name, inviteToken, usedBytes, quotaBytes, counts } = summary;
+  const { name, inviteToken, usedBytes, quotaBytes, counts, unclaimedCount } = summary;
   const members = await loadMembers(c.env.DB, id);
-  return c.json({ group: { id, name, inviteToken, usedBytes, quotaBytes, members, counts } });
+  return c.json({ group: { id, name, inviteToken, usedBytes, quotaBytes, members, counts, unclaimedCount } });
 });
 
 groupRoutes.get("/invites/:token", async (c) => {

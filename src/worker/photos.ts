@@ -3,7 +3,7 @@ import { changedRows, isoBefore, newId, nowIso } from "./db";
 import type { Analysis } from "./face-service";
 import { LISTED_PHOTO, loadPhotoFor, requireMember, type PhotoRow, type PhotoStatus } from "./groups";
 import { ApiError, invalidRequest, notFound, readJsonObject, readPositiveInteger, readText, type AppEnv, type User } from "./http";
-import { appearsIn } from "./matching";
+import { appearsIn, isUnclaimed } from "./matching";
 import { reservePhotoSlot } from "./quota";
 import { zipStream } from "./zip";
 
@@ -207,6 +207,7 @@ export async function deletePhoto(env: Env, photo: PhotoRow): Promise<void> {
     env.DB.prepare("DELETE FROM faces WHERE photo_id = ?1").bind(photo.id),
     env.DB.prepare("DELETE FROM scores WHERE photo_id = ?1").bind(photo.id),
     env.DB.prepare("DELETE FROM tags WHERE photo_id = ?1").bind(photo.id),
+    env.DB.prepare("DELETE FROM downloads WHERE photo_id = ?1").bind(photo.id),
   ]);
   await env.BUCKET.delete([keys.original, keys.preview, keys.thumb]);
 }
@@ -296,9 +297,26 @@ function attachmentDisposition(filename: string): string {
   return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
 }
 
-async function originalResponse(env: Env, photo: PhotoRow): Promise<Response> {
+/** Idempotent: the first date stays. Only listed photos, so a photo deleted meanwhile leaves no record behind. */
+async function recordDownloads(db: D1Database, userId: string, photoIds: string[], membersOnly = false): Promise<void> {
+  const inMyGroups = membersOnly ? "AND EXISTS (SELECT 1 FROM memberships m WHERE m.group_id = p.group_id AND m.user_id = ?1)" : "";
+  await db
+    .prepare(
+      `INSERT OR IGNORE INTO downloads (user_id, photo_id, downloaded_at)
+       SELECT ?1, p.id, ?2 FROM photos p WHERE p.id IN (SELECT value FROM json_each(?3)) AND ${LISTED_PHOTO} ${inMyGroups}`,
+    )
+    .bind(userId, nowIso(), JSON.stringify(photoIds))
+    .run();
+}
+
+/**
+ * `record` is false when the page fetches the original only to hand it to the system share sheet:
+ * the person may still close the sheet, so the page reports the download once the sheet took it.
+ */
+async function originalResponse(env: Env, viewer: User, photo: PhotoRow, record: boolean): Promise<Response> {
   const object = photo.status === "enviando" ? null : await env.BUCKET.get(photoKeys(photo).original);
   if (!object) throw notFound();
+  if (record) await recordDownloads(env.DB, viewer.id, [photo.id]);
   return new Response(object.body, {
     headers: {
       "content-type": photo.content_type,
@@ -321,7 +339,7 @@ interface ZipPhotoRow extends PhotoLocation {
   created_at: string;
 }
 
-async function zipResponse(env: Env, groupId: string, photoIds: string[]): Promise<Response> {
+async function zipResponse(env: Env, viewer: User, groupId: string, photoIds: string[]): Promise<Response> {
   const { results } = await env.DB.prepare(
     `SELECT p.id, p.group_id, p.filename, p.size_bytes, p.created_at FROM photos p
      WHERE p.group_id = ?1 AND ${LISTED_PHOTO} AND p.id IN (SELECT value FROM json_each(?2))
@@ -334,6 +352,7 @@ async function zipResponse(env: Env, groupId: string, photoIds: string[]): Promi
   if (results.length > MAX_ZIP_ENTRIES || totalBytes > MAX_ZIP_BYTES) {
     throw new ApiError(413, "download_too_large", "A seleção é grande demais para um só arquivo ZIP. Baixe em partes.");
   }
+  await recordDownloads(env.DB, viewer.id, results.map((photo) => photo.id));
   const entries = results.map((photo) => ({
     name: photo.filename,
     modifiedAt: new Date(photo.created_at),
@@ -354,11 +373,17 @@ interface PhotoViewRow extends PhotoRow {
   uploader_name: string;
   mine: number;
   my_tag: "me" | "not_me" | null;
+  downloaded: number;
+  unclaimed: number;
 }
+
+/** Whether the viewer `?1` already asked for the original of `p`; nobody else's downloads are read. */
+const DOWNLOADED_BY_VIEWER = "EXISTS (SELECT 1 FROM downloads d WHERE d.user_id = ?1 AND d.photo_id = p.id)";
 
 /** `?1` is the viewer. */
 const PHOTO_VIEW_SQL = `SELECT p.*, u.name AS uploader_name, ${appearsIn("?1")} AS mine,
-    (SELECT value FROM tags WHERE photo_id = p.id AND user_id = ?1) AS my_tag
+    (SELECT value FROM tags WHERE photo_id = p.id AND user_id = ?1) AS my_tag,
+    ${DOWNLOADED_BY_VIEWER} AS downloaded, ${isUnclaimed} AS unclaimed
   FROM photos p JOIN users u ON u.id = p.uploader_id`;
 
 const RECENT_FIRST = "ORDER BY p.created_at DESC, p.id DESC";
@@ -381,6 +406,8 @@ function toPhoto(row: PhotoViewRow, viewer: User) {
     originalUrl: `/api/photos/${row.id}/original`,
     mine: row.mine === 1,
     myTag: row.my_tag,
+    downloaded: row.downloaded === 1,
+    unclaimed: row.unclaimed === 1,
     canDelete: row.uploader_id === viewer.id || viewer.isAdmin,
   };
 }
@@ -404,24 +431,47 @@ function decodeCursor(cursor: string | undefined): Cursor | [null, null] {
   throw invalidRequest("Cursor inválido.");
 }
 
-/** `all` → no filter; `mine` → the viewer; `user:<id>` → that user. */
-function filterUserId(filter: string, viewer: User): string | null {
-  if (filter === "all") return null;
-  if (filter === "mine") return viewer.id;
-  if (filter.startsWith("user:") && filter.length > 5) return filter.slice(5);
-  throw invalidRequest('O filtro precisa ser "all", "mine" ou "user:<id>".');
+interface FilterCondition {
+  /** Photos where this user appears; null for no such condition. */
+  userId: string | null;
+  unclaimed: boolean;
 }
 
-async function listGroupPhotos(db: D1Database, viewer: User, groupId: string, filter: string, cursor: string | undefined) {
+/** `all` → no filter; `mine` → the viewer; `user:<id>` → that user; `unclaimed` → no member appears. */
+function readFilter(filter: string, viewer: User): FilterCondition {
+  if (filter === "all") return { userId: null, unclaimed: false };
+  if (filter === "mine") return { userId: viewer.id, unclaimed: false };
+  if (filter === "unclaimed") return { userId: null, unclaimed: true };
+  if (filter.startsWith("user:") && filter.length > 5) return { userId: filter.slice(5), unclaimed: false };
+  throw invalidRequest('O filtro precisa ser "all", "mine", "unclaimed" ou "user:<id>".');
+}
+
+/** Absent → every photo; `false` → only the ones the viewer has not downloaded yet. */
+function readOnlyNotDownloaded(downloaded: string | undefined): boolean {
+  if (downloaded === undefined) return false;
+  if (downloaded === "false") return true;
+  throw invalidRequest('O parâmetro "downloaded" só aceita "false".');
+}
+
+interface PhotoListQuery {
+  filter: string;
+  onlyNotDownloaded: boolean;
+  cursor: string | undefined;
+}
+
+async function listGroupPhotos(db: D1Database, viewer: User, groupId: string, query: PhotoListQuery) {
+  const condition = readFilter(query.filter, viewer);
   const { results } = await db
     .prepare(
       `${PHOTO_VIEW_SQL}
        WHERE p.group_id = ?2 AND ${LISTED_PHOTO}
          AND (?3 IS NULL OR (p.created_at, p.id) < (?3, ?4))
          AND (?5 IS NULL OR ${appearsIn("?5")})
+         AND (?6 = 0 OR NOT ${DOWNLOADED_BY_VIEWER})
+         AND (?7 = 0 OR ${isUnclaimed})
        ${RECENT_FIRST} LIMIT ${PAGE_SIZE + 1}`,
     )
-    .bind(viewer.id, groupId, ...decodeCursor(cursor), filterUserId(filter, viewer))
+    .bind(viewer.id, groupId, ...decodeCursor(query.cursor), condition.userId, query.onlyNotDownloaded ? 1 : 0, condition.unclaimed ? 1 : 0)
     .all<PhotoViewRow>();
   const page = results.slice(0, PAGE_SIZE);
   const last = page[page.length - 1];
@@ -489,7 +539,12 @@ export const photoRoutes = new Hono<AppEnv>();
 photoRoutes.get("/groups/:id/photos", async (c) => {
   const user = c.get("user");
   const group = await requireMember(c.env.DB, user, c.req.param("id"));
-  return c.json(await listGroupPhotos(c.env.DB, user, group.id, c.req.query("filter") ?? "all", c.req.query("cursor")));
+  const query = {
+    filter: c.req.query("filter") ?? "all",
+    onlyNotDownloaded: readOnlyNotDownloaded(c.req.query("downloaded")),
+    cursor: c.req.query("cursor"),
+  };
+  return c.json(await listGroupPhotos(c.env.DB, user, group.id, query));
 });
 
 photoRoutes.post("/groups/:id/photos", async (c) => {
@@ -508,8 +563,9 @@ photoRoutes.post("/groups/:id/photos", async (c) => {
 });
 
 photoRoutes.post("/groups/:id/download", async (c) => {
-  const group = await requireMember(c.env.DB, c.get("user"), c.req.param("id"));
-  return zipResponse(c.env, group.id, readPhotoIds(await readJsonObject(c)));
+  const user = c.get("user");
+  const group = await requireMember(c.env.DB, user, c.req.param("id"));
+  return zipResponse(c.env, user, group.id, readPhotoIds(await readJsonObject(c)));
 });
 
 photoRoutes.get("/me/photos", async (c) => c.json({ groups: await listMyPhotos(c.env.DB, c.get("user")) }));
@@ -524,9 +580,17 @@ photoRoutes.put("/photos/:id/original", async (c) => {
   return c.json({ photo: await loadPhotoView(c.env.DB, user, photo.id) });
 });
 
-photoRoutes.get("/photos/:id/original", async (c) =>
-  originalResponse(c.env, await loadPhotoFor(c.env.DB, c.get("user"), c.req.param("id"))),
-);
+photoRoutes.get("/photos/:id/original", async (c) => {
+  const user = c.get("user");
+  return originalResponse(c.env, user, await loadPhotoFor(c.env.DB, user, c.req.param("id")), c.req.query("record") !== "0");
+});
+
+/** What the share sheet delivered. Photos of groups the person is not in are ignored, like photos that do not exist. */
+photoRoutes.post("/downloads", async (c) => {
+  const user = c.get("user");
+  await recordDownloads(c.env.DB, user.id, readPhotoIds(await readJsonObject(c)), true);
+  return c.body(null, 204);
+});
 
 photoRoutes.get("/photos/:id/:kind{thumb|preview}", async (c) =>
   derivedResponse(c.env, await loadPhotoFor(c.env.DB, c.get("user"), c.req.param("id")), c.req.param("kind") as "thumb" | "preview"),

@@ -9,7 +9,7 @@ import { resetForReprocess } from "./photos";
 import { monthStartIso, monthUsedBytesSql, reserveGroupSlot } from "./quota";
 import { loadSettings, saveSettings, type Settings } from "./settings";
 
-const adminGroupJson = ({ myPhotoCount: _, ...group }: GroupSummary) => group;
+const adminGroupJson = ({ myPhotoCount: _, unclaimedCount: __, ...group }: GroupSummary) => group;
 
 const adminSettingsJson = ({ maxFileBytes: _, ...settings }: Settings) => settings;
 

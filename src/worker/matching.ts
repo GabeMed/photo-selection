@@ -14,6 +14,10 @@ export const appearsIn = (userExpr: string) => `COALESCE(
   (SELECT s.score >= ${settingSql("match_threshold")} FROM scores s WHERE s.photo_id = p.id AND s.user_id = ${userExpr}),
   0)`;
 
+/** Analyzed, and no member of the group appears in it by the one rule above. Requires the photo alias `p`. */
+export const isUnclaimed = `(p.status = 'processada' AND NOT EXISTS (
+  SELECT 1 FROM memberships um WHERE um.group_id = p.group_id AND ${appearsIn("um.user_id")}))`;
+
 export interface RescoreScope {
   photoIds?: string[];
   userIds?: string[];

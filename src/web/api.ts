@@ -1,6 +1,6 @@
 export type PhotoStatus = "enviando" | "recebida" | "processando" | "processada" | "falhou";
 export type PhotoTag = "me" | "not_me";
-export type PhotoFilter = "all" | "mine" | `user:${string}`;
+export type PhotoFilter = "all" | "mine" | "unclaimed" | `user:${string}`;
 
 export interface Photo {
   id: string;
@@ -18,6 +18,10 @@ export interface Photo {
   originalUrl: string;
   mine: boolean;
   myTag: PhotoTag | null;
+  /** Whether I already asked for the original; never about anyone else. */
+  downloaded: boolean;
+  /** Analyzed, and no member of the group appears in it. */
+  unclaimed: boolean;
   canDelete: boolean;
 }
 
@@ -67,6 +71,7 @@ export interface GroupDetail {
   quotaBytes: number;
   members: Member[];
   counts: GroupCounts;
+  unclaimedCount: number;
 }
 
 export interface InvitedGroup {
@@ -251,17 +256,23 @@ export const getInvite = (token: string) => getJson<Invite>(`/api/invites/${toke
 export const joinInvite = async (token: string) =>
   (await sendJsonFor<{ group: InvitedGroup }>("POST", `/api/invites/${token}/join`)).group;
 
-/** The person's link for the iOS Shortcut; `rotate` replaces it and the old one stops working. */
-export const getUploadLink = async (groupId: string, rotate = false) =>
-  (await sendJsonFor<{ uploadLink: string }>("POST", `/api/groups/${groupId}/upload-link`, { rotate })).uploadLink;
-
 // ---- Photos ----
 
-export function listGroupPhotos(groupId: string, filter: PhotoFilter, cursor?: string): Promise<PhotoPage> {
-  const query = new URLSearchParams({ filter });
-  if (cursor) query.set("cursor", cursor);
-  return getJson<PhotoPage>(`/api/groups/${groupId}/photos?${query}`);
+export interface PhotoListFilter {
+  filter: PhotoFilter;
+  /** Only the photos I have not downloaded yet; combines with `filter`. */
+  onlyNotDownloaded: boolean;
 }
+
+export function photoListQuery({ filter, onlyNotDownloaded }: PhotoListFilter, cursor?: string): URLSearchParams {
+  const query = new URLSearchParams({ filter });
+  if (onlyNotDownloaded) query.set("downloaded", "false");
+  if (cursor) query.set("cursor", cursor);
+  return query;
+}
+
+export const listGroupPhotos = (groupId: string, listFilter: PhotoListFilter, cursor?: string) =>
+  getJson<PhotoPage>(`/api/groups/${groupId}/photos?${photoListQuery(listFilter, cursor)}`);
 
 export const listMyPhotos = async () => (await getJson<{ groups: MyPhotosGroup[] }>("/api/me/photos")).groups;
 
@@ -330,7 +341,10 @@ const readBlob = (response: Response) =>
     throw interruptedDownload();
   });
 
-export const downloadOriginal = async (photo: Photo) => readBlob(await send(photo.originalUrl));
+/** For the share sheet: not counted as a download until `recordDownloads` says the sheet took it. */
+export const downloadOriginal = async (photo: Photo) => readBlob(await send(`${photo.originalUrl}?record=0`));
+
+export const recordDownloads = async (photoIds: string[]) => void (await sendJson("POST", "/api/downloads", { photoIds }));
 
 export const downloadZip = async (groupId: string, photoIds: string[]) =>
   readBlob(await sendJson("POST", `/api/groups/${groupId}/download`, { photoIds }));

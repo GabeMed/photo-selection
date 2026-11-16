@@ -12,6 +12,7 @@ interface SelectionBarProps {
   /** Names the ZIP of each group. */
   groupNames: Record<string, string>;
   onClear: () => void;
+  onDownloaded?: (photos: Photo[]) => void;
 }
 
 /** The element's height, kept current while it is on screen. */
@@ -28,7 +29,7 @@ function useHeight(ref: RefObject<HTMLElement | null>, shown: boolean): number {
 }
 
 /** While photos are selected, downloading them is the screen's main action. */
-export function SelectionBar({ selected, groupNames, onClear }: SelectionBarProps) {
+export function SelectionBar({ selected, groupNames, onClear, onDownloaded }: SelectionBarProps) {
   const [sharing, setSharing] = useState(false);
   const bar = useRef<HTMLDivElement>(null);
   const barHeight = useHeight(bar, selected.length > 0);
@@ -68,6 +69,7 @@ export function SelectionBar({ selected, groupNames, onClear }: SelectionBarProp
                 groupName={groupNames[ofGroup[0].groupId]}
                 label={zipLabel(ofGroup)}
                 primary={!sharePrimary}
+                onSaved={() => onDownloaded?.(ofGroup)}
               />
             ))}
           {!zipOffered && (
@@ -77,7 +79,14 @@ export function SelectionBar({ selected, groupNames, onClear }: SelectionBarProp
             </span>
           )}
         </div>
-        {sharing && <ShareDialog photos={selected} groupNames={groupNames} onClose={() => setSharing(false)} />}
+        {sharing && (
+          <ShareDialog
+            photos={selected}
+            groupNames={groupNames}
+            onClose={() => setSharing(false)}
+            onDelivered={(photo) => onDownloaded?.([photo])}
+          />
+        )}
       </BarraAcaoFixa>
     </>
   );

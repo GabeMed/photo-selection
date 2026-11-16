@@ -17,6 +17,8 @@ export function photoOf(fields: Partial<Photo> & { id: string }): Photo {
     originalUrl: `/api/photos/${fields.id}/original`,
     mine: false,
     myTag: null,
+    downloaded: false,
+    unclaimed: false,
     canDelete: false,
     ...fields,
   };

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import * as api from "../api";
 import type { Photo } from "../api";
 import { BotaoPrincipal, EstadoFotos } from "../design-system";
 import { fetchOriginalFile, shareBatches } from "../download";
@@ -10,13 +11,15 @@ interface ShareDialogProps {
   photos: Photo[];
   groupNames: Record<string, string>;
   onClose: () => void;
+  /** Each photo the share sheet took, or that left in a ZIP: it counts as downloaded from then on. */
+  onDelivered?: (photo: Photo) => void;
 }
 
 /**
  * Downloads the originals batch by batch and hands each batch to the system share sheet.
  * Sharing needs a tap of its own: the browser refuses it after the wait for the download.
  */
-export function ShareDialog({ photos, groupNames, onClose }: ShareDialogProps) {
+export function ShareDialog({ photos, groupNames, onClose, onDelivered }: ShareDialogProps) {
   const [batches] = useState(() => shareBatches(photos));
   const [batchIndex, setBatchIndex] = useState(0);
   // Files are kept with the batch they belong to, so a new batch never starts out looking ready.
@@ -65,7 +68,14 @@ export function ShareDialog({ photos, groupNames, onClose }: ShareDialogProps) {
       if (failure instanceof DOMException && failure.name === "AbortError") return;
       return setError(new Error("O aparelho não conseguiu abrir o compartilhamento desse lote. Tenta de novo."));
     }
+    void delivered(batch!, true);
+  };
+  /** The share sheet took the batch (or the ZIP was saved, which the API already recorded). */
+  const delivered = async (photosOfBatch: Photo[], report: boolean) => {
     nextBatch();
+    // A history that fails to save must not stop the next batch: these photos only show as new again.
+    if (report) await api.recordDownloads(photosOfBatch.map((photo) => photo.id)).catch(() => undefined);
+    photosOfBatch.forEach((photo) => onDelivered?.(photo));
   };
 
   return (
@@ -98,7 +108,7 @@ export function ShareDialog({ photos, groupNames, onClose }: ShareDialogProps) {
                 groupName={groupNames[batch[0].groupId]}
                 label={`Baixar ${plural(batch.length, "foto", "fotos")} em ZIP`}
                 primary
-                onSaved={nextBatch}
+                onSaved={() => void delivered(batch, false)}
               />
             </>
           )}

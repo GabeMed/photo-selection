@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { downloadZip, UPLOAD_STALL_TIMEOUT_MS, uploadOriginal } from "./api";
+import { downloadZip, photoListQuery, UPLOAD_STALL_TIMEOUT_MS, uploadOriginal } from "./api";
 import { photoOf } from "./testing";
 
 /** The part of XMLHttpRequest the upload uses; the test plays the network by calling the handlers. */
@@ -92,5 +92,13 @@ describe("downloadZip", () => {
     });
     vi.stubGlobal("fetch", async () => new Response(body, { status: 200 }));
     await expect(downloadZip("g1", ["p1"])).rejects.toMatchObject({ code: "download_interrupted" });
+  });
+});
+
+describe("photoListQuery", () => {
+  it("sends the person filter, and the not-downloaded one only when asked, so both combine", () => {
+    expect(String(photoListQuery({ filter: "unclaimed", onlyNotDownloaded: false }))).toBe("filter=unclaimed");
+    expect(String(photoListQuery({ filter: "mine", onlyNotDownloaded: true }, "c1"))).toBe("filter=mine&downloaded=false&cursor=c1");
+    expect(String(photoListQuery({ filter: "unclaimed", onlyNotDownloaded: true }))).toBe("filter=unclaimed&downloaded=false");
   });
 });

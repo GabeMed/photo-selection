@@ -43,10 +43,12 @@ interface PhotoActionsProps {
   onDeleted: (photoId: string) => void;
   /** The API answers a reprocess request without the photo: the owner of the list reads it again. */
   onReprocessed: () => void;
+  /** The original link was followed: the API counts the photo as downloaded from the request on. */
+  onDownloaded?: (photos: Photo[]) => void;
 }
 
 /** Everything that acts on the photo, kept below the stage so nothing is drawn over the image. */
-function PhotoActions({ photo, personOf, onChanged, onDeleted, onReprocessed }: PhotoActionsProps) {
+function PhotoActions({ photo, personOf, onChanged, onDeleted, onReprocessed, onDownloaded }: PhotoActionsProps) {
   const { user } = useSession();
   const action = useAction();
 
@@ -101,7 +103,7 @@ function PhotoActions({ photo, personOf, onChanged, onDeleted, onReprocessed }: 
         </div>
       )}
       <ErrorText message={action.error} />
-      <a className={botaoPrincipalVariants()} href={photo.originalUrl} download={photo.filename}>
+      <a className={botaoPrincipalVariants()} href={photo.originalUrl} download={photo.filename} onClick={() => onDownloaded?.([photo])}>
         Baixar original
       </a>
     </div>

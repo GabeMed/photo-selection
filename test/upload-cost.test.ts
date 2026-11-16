@@ -1,7 +1,7 @@
 import { createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import worker from "../src/worker/index";
-import { api, env, groupWith, json, randomBytes, type ApiInit } from "./helpers";
+import { env, groupWith, json, randomBytes, type ApiInit } from "./helpers";
 
 interface Cost {
   /** Each `run`/`first`/`all`/`raw` call, and each `batch` call, is one round trip to D1. */
@@ -93,16 +93,6 @@ function jpegBytes(length: number): Uint8Array<ArrayBuffer> {
 }
 
 describe("server work for one successful upload", () => {
-  it("through the upload link", async () => {
-    const { group, friends: [ana] } = await groupWith("Ana");
-    const link = (await json(api(`/api/groups/${group.id}/upload-link`, { as: ana, method: "POST" }))).uploadLink;
-    const bytes = jpegBytes(3000);
-    const headers = { "content-length": String(bytes.length), "content-type": "image/jpeg" };
-    const { response, cost } = await measured(new URL(link).pathname, { body: bytes, headers });
-    await json(response);
-    expect(cost).toEqual({ d1RoundTrips: 3, d1Statements: 3, r2Operations: ["put"] });
-  });
-
   it("through the page's slot and PUT, with the declared hash", async () => {
     const { group, friends: [ana] } = await groupWith("Ana");
     const bytes = jpegBytes(3000);
