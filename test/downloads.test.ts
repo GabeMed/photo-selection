@@ -8,8 +8,8 @@ async function downloadsOf(user: Session): Promise<Record<string, string>> {
   return Object.fromEntries(results.map((row) => [row.photo_id, row.downloaded_at]));
 }
 
-async function downloadedFlags(user: Session, groupId: string, query = ""): Promise<[string, boolean][]> {
-  const { photos } = await json(api(`/api/groups/${groupId}/photos${query}`, { as: user }));
+async function downloadedFlags(user: Session, groupId: string): Promise<[string, boolean][]> {
+  const { photos } = await json(api(`/api/groups/${groupId}/photos`, { as: user }));
   return photos.map((photo: any) => [photo.id, photo.downloaded]);
 }
 
@@ -94,28 +94,5 @@ describe("download history", () => {
 
     expect(Object.keys(await downloadsOf(ana))).toEqual([kept]);
     expect(await downloadsOf(bia)).toEqual({});
-  });
-
-  it("lists only what I have not downloaded, combined with the other filters", async () => {
-    const { group, friends: [ana, bia] } = await groupWith("Ana", "Bia");
-    const anaOld = await upload(ana, group.id, randomBytes(10));
-    const anaNew = await upload(ana, group.id, randomBytes(10));
-    const tagged = await upload(bia, group.id, randomBytes(10));
-    await json(api(`/api/photos/${tagged}/tag`, { as: bia, method: "PUT", json: { value: "me" } }));
-    await json(api(`/api/photos/${anaNew}/tag`, { as: bia, method: "PUT", json: { value: "me" } }));
-    await fetchOriginal(bia, anaOld);
-    await fetchOriginal(ana, anaNew);
-
-    expect(await downloadedFlags(bia, group.id, "?downloaded=false")).toEqual([
-      [tagged, false],
-      [anaNew, false],
-    ]);
-    expect(await downloadedFlags(bia, group.id, "?filter=mine&downloaded=false")).toEqual([
-      [tagged, false],
-      [anaNew, false],
-    ]);
-    await fetchOriginal(bia, tagged);
-    expect(await downloadedFlags(bia, group.id, "?filter=mine&downloaded=false")).toEqual([[anaNew, false]]);
-    expect((await api(`/api/groups/${group.id}/photos?downloaded=true`, { as: bia })).status).toBe(400);
   });
 });

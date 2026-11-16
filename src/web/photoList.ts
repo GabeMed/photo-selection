@@ -13,8 +13,6 @@ export function mergePhotos(current: Photo[], incoming: Photo[]): Photo[] {
   return [...byId.values()].sort(recentFirst);
 }
 
-export const notDownloaded = (photos: Photo[]) => photos.filter((photo) => !photo.downloaded);
-
 /** A download is never undone, so a photo known as downloaded here stays so whatever an older answer says. */
 export const withDownloaded = (photos: Photo[], downloadedIds: ReadonlySet<string>) =>
   photos.map((photo) => (!photo.downloaded && downloadedIds.has(photo.id) ? { ...photo, downloaded: true } : photo));

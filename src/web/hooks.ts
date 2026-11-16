@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, type Photo } from "./api";
+import { toggledAll } from "./selection";
 
 export interface Loaded<T> {
   data: T | undefined;
@@ -56,7 +57,8 @@ export function useAction(): Action {
 export interface Selection {
   ids: ReadonlySet<string>;
   toggle: (photo: Photo) => void;
-  selectAll: (photos: Photo[]) => void;
+  /** Selects all of `photos`, or clears the selection when all of them already are. */
+  toggleAll: (photos: Photo[]) => void;
   clear: () => void;
 }
 
@@ -68,9 +70,24 @@ export function useSelection(): Selection {
       if (!next.delete(photo.id)) next.add(photo.id);
       return next;
     });
-  const selectAll = (photos: Photo[]) => setIds(new Set(photos.map((photo) => photo.id)));
+  const toggleAll = (photos: Photo[]) => setIds((current) => toggledAll(photos, current));
   const clear = () => setIds(new Set());
-  return { ids, toggle, selectAll, clear };
+  return { ids, toggle, toggleAll, clear };
+}
+
+export interface KnownDownloads {
+  ids: ReadonlySet<string>;
+  mark: (photos: Photo[]) => void;
+}
+
+/**
+ * The photos downloaded on this page, shown as downloaded right away (with `withDownloaded`) and
+ * through every later read of the photos, even one that started before the download.
+ */
+export function useKnownDownloads(): KnownDownloads {
+  const [ids, setIds] = useState<ReadonlySet<string>>(new Set());
+  const mark = useCallback((photos: Photo[]) => setIds((current) => new Set([...current, ...photos.map((photo) => photo.id)])), []);
+  return { ids, mark };
 }
 
 /** Keeps the screen on while `active`. The lock is best effort: the browser may refuse it. */

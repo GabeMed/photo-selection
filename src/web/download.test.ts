@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { firstZipPart, shareBatches, SHARE_BATCH_MAX_BYTES, SHARE_BATCH_MAX_PHOTOS, splitIntoBatches, ZIP_MAX_BYTES, ZIP_MAX_PHOTOS } from "./download";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { downloadCorner, saveOriginal, shareBatches, SHARE_BATCH_MAX_BYTES, SHARE_BATCH_MAX_PHOTOS, splitIntoBatches } from "./download";
+import type { Photo } from "./api";
 import { photoOf } from "./testing";
 
 const sized = (sizes: number[], groupId = "g1") => sizes.map((sizeBytes, index) => photoOf({ id: `${groupId}-${index}`, groupId, sizeBytes }));
@@ -33,15 +34,81 @@ describe("shareBatches", () => {
   });
 });
 
-describe("firstZipPart", () => {
-  it("takes, in order, what fits in one ZIP of the Worker", () => {
-    expect(firstZipPart(sized(Array(ZIP_MAX_PHOTOS + 5).fill(1)))).toHaveLength(ZIP_MAX_PHOTOS);
-    const half = ZIP_MAX_BYTES / 2;
-    expect(sizesOf([firstZipPart(sized([half, half, 1]))])).toEqual([[half, half]]);
-    expect(sizesOf([firstZipPart(sized([half, half + 1, 1]))])).toEqual([[half]]);
+describe("downloadCorner", () => {
+  it("shows the seal on a photo I downloaded, a button on one I did not, and nothing while the original is still uploading", () => {
+    expect(downloadCorner(photoOf({ id: "a", downloaded: true }))).toBe("seal");
+    expect(downloadCorner(photoOf({ id: "b", status: "recebida" }))).toBe("button");
+    expect(downloadCorner(photoOf({ id: "c", status: "falhou" }))).toBe("button");
+    expect(downloadCorner(photoOf({ id: "d", status: "enviando" }))).toBe("none");
+  });
+});
+
+describe("saveOriginal", () => {
+  const photo = photoOf({ id: "p1", filename: "praia.jpg" });
+  let link: { href: string; download: string; click: ReturnType<typeof vi.fn> };
+
+  beforeEach(() => {
+    link = { href: "", download: "", click: vi.fn() };
+    vi.stubGlobal("document", { createElement: () => link });
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:p1");
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
-  it("is empty for no photo", () => {
-    expect(firstZipPart([])).toEqual([]);
+  it("asks for the recorded original, saves it under the photo's name, and only then marks it", async () => {
+    const fetch = vi.fn(async () => new Response(new Blob(["bytes"])));
+    vi.stubGlobal("fetch", fetch);
+    const onSaved = vi.fn(() => expect(link.click).toHaveBeenCalled());
+    await saveOriginal(photo, onSaved);
+    expect(fetch).toHaveBeenCalledWith("/api/photos/p1/original", undefined);
+    expect(link.download).toBe("praia.jpg");
+    expect(onSaved).toHaveBeenCalledWith([photo]);
+  });
+
+  it("neither saves nor marks when the original does not arrive", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response('{"error":{"code":"not_found","message":"Não achei."}}', { status: 404 })));
+    const onSaved = vi.fn();
+    await expect(saveOriginal(photo, onSaved)).rejects.toMatchObject({ status: 404 });
+    expect(link.click).not.toHaveBeenCalled();
+    expect(onSaved).not.toHaveBeenCalled();
+  });
+
+  it("fetches one original at a time: the next starts only once the one before was saved", async () => {
+    const answers: ((response: Response) => void)[] = [];
+    const fetch = vi.fn(() => new Promise<Response>((resolve) => answers.push(resolve)));
+    vi.stubGlobal("fetch", fetch);
+    const saved: string[] = [];
+    const onSaved = (photos: Photo[]) => saved.push(photos[0].id);
+    const first = saveOriginal(photoOf({ id: "p1" }), onSaved);
+    const second = saveOriginal(photoOf({ id: "p2" }), onSaved);
+
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(fetch).toHaveBeenCalledTimes(1);
+    answers[0](new Response(new Blob(["one"])));
+    await first;
+    expect(saved).toEqual(["p1"]);
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    expect(fetch).toHaveBeenLastCalledWith("/api/photos/p2/original", undefined);
+    answers[1](new Response(new Blob(["two"])));
+    await second;
+    expect(saved).toEqual(["p1", "p2"]);
+  });
+
+  it("goes on to the next original when the one before fails", async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("{}", { status: 500 }))
+      .mockResolvedValueOnce(new Response(new Blob(["two"])));
+    vi.stubGlobal("fetch", fetch);
+    const onSaved = vi.fn();
+    const first = saveOriginal(photoOf({ id: "p1" }), onSaved);
+    const second = saveOriginal(photoOf({ id: "p2" }), onSaved);
+    await expect(first).rejects.toMatchObject({ status: 500 });
+    await second;
+    expect(onSaved).toHaveBeenCalledTimes(1);
+    expect(onSaved).toHaveBeenCalledWith([expect.objectContaining({ id: "p2" })]);
   });
 });

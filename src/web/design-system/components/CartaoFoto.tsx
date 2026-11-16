@@ -30,7 +30,8 @@ export const CartaoFoto = React.forwardRef<HTMLButtonElement, CartaoFotoProps>(
         {...props}
       >
         {src ? <img src={src} alt={descricao ?? `Foto de ${autor.nome}`} loading="lazy" className="size-full object-cover" /> : children}
-        <span className={cn("absolute bottom-2 left-2 rounded-pill border-grosso border-tinta px-2 py-0.5 font-display text-xs font-semibold text-tinta shadow-pop-sm", corFundo[autor.cor])}>
+        {/* Never reaches the bottom-right corner, which is kept for the photo's own controls. */}
+        <span title={autor.nome} className={cn("absolute bottom-2 left-2 max-w-[calc(100%-(--spacing(14)))] truncate rounded-pill border-grosso border-tinta px-2 py-0.5 font-display text-xs font-semibold text-tinta shadow-pop-sm", corFundo[autor.cor])}>
           {autor.nome}
         </span>
         {reacoesDadas.length > 0 && (

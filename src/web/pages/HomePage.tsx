@@ -5,11 +5,13 @@ import type { GroupSummary, Photo } from "../api";
 import { PhotoGrid } from "../components/PhotoGrid";
 import { PhotoViewer } from "../components/PhotoViewer";
 import { SelectionBar } from "../components/SelectionBar";
-import { ErrorNotice, Loading, PageHeader, SecondaryButton, UsageBar } from "../components/ui";
+import { ErrorNotice, Loading, PageHeader, SelectAllButton, UsageBar } from "../components/ui";
 import { BarraAcaoFixa, botaoPrincipalVariants, CartaoViagem, EstadoFotos } from "../design-system";
 import { plural } from "../format";
-import { useLoad, useSelection, type Selection } from "../hooks";
+import { useKnownDownloads, useLoad, useSelection, type Selection } from "../hooks";
 import { toPessoa } from "../people";
+import { withDownloaded } from "../photoList";
+import { allSelected } from "../selection";
 import { useSession } from "../session";
 
 interface GroupSectionProps {
@@ -20,9 +22,10 @@ interface GroupSectionProps {
   failed: boolean;
   selection: Selection;
   onOpen: (photo: Photo) => void;
+  onDownloaded: (photos: Photo[]) => void;
 }
 
-function GroupPhotos({ photos, failed, selection, onOpen }: Omit<GroupSectionProps, "group">) {
+function GroupPhotos({ photos, failed, selection, onOpen, onDownloaded }: Omit<GroupSectionProps, "group">) {
   if (!photos) return failed ? <p className="text-sm text-muted-foreground">Não deu pra carregar suas fotos agora.</p> : <Loading />;
   if (photos.length === 0) {
     return (
@@ -31,10 +34,10 @@ function GroupPhotos({ photos, failed, selection, onOpen }: Omit<GroupSectionPro
       </EstadoFotos>
     );
   }
-  return <PhotoGrid photos={photos} personOf={toPessoa} selectedIds={selection.ids} onToggle={selection.toggle} onOpen={onOpen} />;
+  return <PhotoGrid photos={photos} personOf={toPessoa} selectedIds={selection.ids} onToggle={selection.toggle} onOpen={onOpen} onDownloaded={onDownloaded} />;
 }
 
-function GroupSection({ group, photos, failed, selection, onOpen }: GroupSectionProps) {
+function GroupSection({ group, photos, failed, selection, onOpen, onDownloaded }: GroupSectionProps) {
   return (
     <section className="flex flex-col gap-3" aria-label={group.name}>
       {/* An article gives a link no name of its own. */}
@@ -50,7 +53,7 @@ function GroupSection({ group, photos, failed, selection, onOpen }: GroupSection
         </CartaoViagem>
       </Link>
       <h2 className="text-lg font-semibold">Suas fotos{photos && ` (${photos.length})`}</h2>
-      <GroupPhotos photos={photos} failed={failed} selection={selection} onOpen={onOpen} />
+      <GroupPhotos photos={photos} failed={failed} selection={selection} onOpen={onOpen} onDownloaded={onDownloaded} />
     </section>
   );
 }
@@ -60,10 +63,11 @@ export function HomePage() {
   const mine = useLoad(api.listMyPhotos, []);
   const groups = useLoad(api.listGroups, []);
   const selection = useSelection();
+  const downloads = useKnownDownloads();
   const [opened, setOpened] = useState<Photo | null>(null);
 
-  const photosByGroup = mine.data && new Map(mine.data.map((group) => [group.id, group.photos]));
-  const allPhotos = (mine.data ?? []).flatMap((group) => group.photos);
+  const photosByGroup = mine.data && new Map(mine.data.map((group) => [group.id, withDownloaded(group.photos, downloads.ids)]));
+  const allPhotos = [...(photosByGroup?.values() ?? [])].flat();
   const groupNames = Object.fromEntries((mine.data ?? []).map((group) => [group.id, group.name]));
   const selected = allPhotos.filter((photo) => selection.ids.has(photo.id));
 
@@ -107,15 +111,16 @@ export function HomePage() {
           failed={mine.error !== undefined}
           selection={selection}
           onOpen={setOpened}
+          onDownloaded={downloads.mark}
         />
       ))}
       {allPhotos.length > 0 && (
-        <SecondaryButton className="self-start" onClick={() => selection.selectAll(allPhotos)}>
-          Selecionar todas
-        </SecondaryButton>
+        <span className="self-start">
+          <SelectAllButton allSelected={allSelected(allPhotos, selection.ids)} onClick={() => selection.toggleAll(allPhotos)} />
+        </span>
       )}
 
-      <SelectionBar selected={selected} groupNames={groupNames} onClear={selection.clear} />
+      <SelectionBar selected={selected} groupNames={groupNames} onClear={selection.clear} onDownloaded={downloads.mark} />
       {user.selfies.length === 0 && selected.length === 0 && (
         <BarraAcaoFixa>
           <Link to="/perfil" className={botaoPrincipalVariants()}>
@@ -127,12 +132,13 @@ export function HomePage() {
         <PhotoViewer
           photos={allPhotos}
           personOf={toPessoa}
-          opened={allPhotos.find((photo) => photo.id === opened.id) ?? opened}
+          opened={withDownloaded([allPhotos.find((photo) => photo.id === opened.id) ?? opened], downloads.ids)[0]}
           onMove={setOpened}
           onClose={() => setOpened(null)}
           onChanged={changed}
           onDeleted={closeAndReload}
           onReprocessed={closeAndReload}
+          onDownloaded={downloads.mark}
         />
       )}
     </>

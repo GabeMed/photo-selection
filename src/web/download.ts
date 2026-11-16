@@ -9,10 +9,6 @@ export const SHARE_BATCH_MAX_BYTES = 150 * MIB;
 /** The ZIP is read whole into memory before it is saved; above this the person is warned first. */
 export const ZIP_WARNING_BYTES = 500 * MIB;
 
-/** The Worker's limits for one ZIP: entries, and bytes without ZIP64. */
-export const ZIP_MAX_PHOTOS = 1000;
-export const ZIP_MAX_BYTES = 4 * 1024 ** 3 - 64 * MIB;
-
 export const totalBytes = (photos: Photo[]) => photos.reduce((total, photo) => total + photo.sizeBytes, 0);
 
 /** iPhone and iPad, where the share sheet saves to the photo library. iPadOS presents itself as a Mac with touch. */
@@ -50,9 +46,6 @@ export function splitByGroup(photos: Photo[]): Photo[][] {
   return [...byGroup.values()];
 }
 
-/** The photos of one group that fit in one ZIP, taken in order; the rest wait for the next tap. */
-export const firstZipPart = (photos: Photo[]): Photo[] => splitIntoBatches(photos, ZIP_MAX_PHOTOS, ZIP_MAX_BYTES)[0] ?? [];
-
 /** Share batches never mix groups, so a batch the device refuses to share can leave as one ZIP. */
 export const shareBatches = (photos: Photo[]) =>
   splitByGroup(photos).flatMap((ofGroup) => splitIntoBatches(ofGroup, SHARE_BATCH_MAX_PHOTOS, SHARE_BATCH_MAX_BYTES));
@@ -70,6 +63,32 @@ function saveBlob(blob: Blob, filename: string): void {
   link.click();
   // Safari reads the blob after the click returns, so the URL has to outlive it.
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+/** What a thumbnail's corner shows: the seal once I downloaded it, else a quick download once the original exists. */
+export function downloadCorner(photo: Photo): "seal" | "button" | "none" {
+  if (photo.downloaded) return "seal";
+  if (photo.status === "enviando") return "none";
+  return "button";
+}
+
+/** The last single original asked for; the next one waits for it, saved or failed. */
+let previousOriginal: Promise<void> = Promise.resolve();
+
+/**
+ * The one way to download a single original, from the grid and from the open photo. The file
+ * passes through memory, so originals are fetched one at a time, in the order they were asked
+ * for; only a saved file shows as downloaded.
+ */
+export function saveOriginal(photo: Photo, onSaved: (photos: Photo[]) => void): Promise<void> {
+  const download = previousOriginal
+    .catch(() => undefined)
+    .then(async () => {
+      saveBlob(await api.downloadAndRecordOriginal(photo), photo.filename);
+      onSaved([photo]);
+    });
+  previousOriginal = download;
+  return download;
 }
 
 /** Photos of a single group, saved as one ZIP. */

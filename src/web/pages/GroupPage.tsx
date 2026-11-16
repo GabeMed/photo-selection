@@ -1,17 +1,18 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import * as api from "../api";
-import type { GroupDetail, Photo, PhotoFilter, PhotoListFilter } from "../api";
-import { DownloadNewButton } from "../components/DownloadNewButton";
+import type { GroupDetail, Photo, PhotoFilter } from "../api";
 import { PhotoGrid } from "../components/PhotoGrid";
 import { PhotoViewer } from "../components/PhotoViewer";
 import { SelectionBar } from "../components/SelectionBar";
-import { Chip, CopyButton, ErrorNotice, inviteUrl, Loading, PageHeader, SecondaryButton, UsageBar } from "../components/ui";
+import { Chip, CopyButton, ErrorNotice, inviteUrl, Loading, PageHeader, SecondaryButton, SelectAllButton, UsageBar } from "../components/ui";
 import { Uploader } from "../components/Uploader";
 import { Avatar, EstadoFotos, PilhaAvatares, type Pessoa } from "../design-system";
 import { plural } from "../format";
-import { useLoad, useSelection } from "../hooks";
+import { useKnownDownloads, useLoad, useSelection } from "../hooks";
 import { groupPersonOf, type PersonOf } from "../people";
+import { withDownloaded } from "../photoList";
+import { allSelected } from "../selection";
 import { useSession } from "../session";
 import { useGroupPhotos } from "../useGroupPhotos";
 
@@ -22,13 +23,12 @@ const isAwaitingAnalysis = (photo: Photo) => photo.status === "recebida" || phot
 interface FilterBarProps {
   group: GroupDetail;
   personOf: PersonOf;
-  listFilter: PhotoListFilter;
-  onChange: (listFilter: PhotoListFilter) => void;
+  filter: PhotoFilter;
+  onChange: (filter: PhotoFilter) => void;
 }
 
-function FilterBar({ group, personOf, listFilter, onChange }: FilterBarProps) {
+function FilterBar({ group, personOf, filter, onChange }: FilterBarProps) {
   const { user } = useSession();
-  const { filter, onlyNotDownloaded } = listFilter;
   const options: { value: PhotoFilter; label: string; person?: Pessoa }[] = [
     { value: "all", label: "Todas" },
     { value: "mine", label: "Minhas" },
@@ -39,18 +39,8 @@ function FilterBar({ group, personOf, listFilter, onChange }: FilterBarProps) {
   ];
   return (
     <div className="-mx-4 flex gap-2 overflow-x-auto px-4 py-1" role="group" aria-label="Filtrar fotos">
-      {/* Combines with whichever of the others is chosen. */}
-      <Chip pressed={onlyNotDownloaded} onClick={() => onChange({ filter, onlyNotDownloaded: !onlyNotDownloaded })}>
-        Ainda não baixei
-      </Chip>
-      <span aria-hidden className="my-2 w-0.5 shrink-0 rounded-pill bg-border" />
       {options.map((option) => (
-        <Chip
-          key={option.value}
-          pressed={filter === option.value}
-          className={option.person && "pl-1"}
-          onClick={() => onChange({ filter: option.value, onlyNotDownloaded })}
-        >
+        <Chip key={option.value} pressed={filter === option.value} className={option.person && "pl-1"} onClick={() => onChange(option.value)}>
           {option.person && <Avatar pessoa={option.person} size="sm" aria-hidden />}
           {option.label}
         </Chip>
@@ -61,10 +51,10 @@ function FilterBar({ group, personOf, listFilter, onChange }: FilterBarProps) {
 
 function GroupView({ groupId }: { groupId: string }) {
   const group = useLoad(() => api.getGroup(groupId), [groupId]);
-  const [listFilter, setListFilter] = useState<PhotoListFilter>({ filter: "all", onlyNotDownloaded: false });
-  const { filter, onlyNotDownloaded } = listFilter;
-  const list = useGroupPhotos(groupId, listFilter);
+  const [filter, setFilter] = useState<PhotoFilter>("all");
+  const list = useGroupPhotos(groupId, filter);
   const selection = useSelection();
+  const downloads = useKnownDownloads();
   // The photo itself, not its id: it stays on screen after a tag and a refresh take it out of the list.
   const [openedPhoto, setOpened] = useState<Photo | null>(null);
 
@@ -87,11 +77,12 @@ function GroupView({ groupId }: { groupId: string }) {
   if (!group.data) return group.error ? <ErrorNotice error={group.error} /> : <Loading />;
   const { name, members, counts, usedBytes, quotaBytes, inviteToken } = group.data;
   const personOf = groupPersonOf(members);
-  const opened = openedPhoto && (list.photos.find((photo) => photo.id === openedPhoto.id) ?? openedPhoto);
+  const photos = withDownloaded(list.photos, downloads.ids);
+  const opened = openedPhoto && withDownloaded([photos.find((photo) => photo.id === openedPhoto.id) ?? openedPhoto], downloads.ids)[0];
 
-  const changeFilter = (next: PhotoListFilter) => {
+  const changeFilter = (next: PhotoFilter) => {
     selection.clear();
-    setListFilter(next);
+    setFilter(next);
   };
   // A photo just sent belongs in "Todas"; whether it belongs in a person's list is only known after analysis.
   const uploaded = (photo: Photo | null) => {
@@ -116,7 +107,7 @@ function GroupView({ groupId }: { groupId: string }) {
     group.reload();
   };
 
-  const selected = list.photos.filter((photo) => selection.ids.has(photo.id));
+  const selected = photos.filter((photo) => selection.ids.has(photo.id));
 
   return (
     <>
@@ -136,26 +127,30 @@ function GroupView({ groupId }: { groupId: string }) {
       <Uploader groupId={groupId} showAction={selected.length === 0} onUploaded={uploaded} onSettled={group.reload} />
 
       <section className="flex flex-col gap-3" aria-label="Fotos do grupo">
-        <FilterBar group={group.data} personOf={personOf} listFilter={listFilter} onChange={changeFilter} />
-        <div className="flex min-h-11 flex-wrap items-center justify-between gap-3">
+        <FilterBar group={group.data} personOf={personOf} filter={filter} onChange={changeFilter} />
+        <div className="flex min-h-11 items-center justify-between gap-3">
           <span className="text-sm text-muted-foreground" role="status">
             {counts.processing > 0 && `${counts.processing} em análise`}
             {counts.processing > 0 && counts.failed > 0 && " · "}
             {counts.failed > 0 && `${counts.failed} sem miniatura`}
           </span>
-          <span className="flex flex-wrap items-center gap-2">
-            {list.photos.length > 0 && (
-              <DownloadNewButton photos={list.photos} hasMore={list.hasMore} groupId={groupId} groupName={name} onDownloaded={list.markDownloaded} />
-            )}
-            {list.photos.length > 0 && <SecondaryButton onClick={() => selection.selectAll(list.photos)}>Selecionar todas</SecondaryButton>}
-          </span>
+          {photos.length > 0 && (
+            <SelectAllButton allSelected={allSelected(photos, selection.ids)} onClick={() => selection.toggleAll(photos)} />
+          )}
         </div>
         {list.error && <ErrorNotice error={list.error} />}
-        <PhotoGrid photos={list.photos} personOf={personOf} selectedIds={selection.ids} onToggle={selection.toggle} onOpen={setOpened} />
-        {list.photos.length === 0 && !list.loading && !list.error && (
-          <EstadoFotos titulo="Cadê as fotos? 👀">{filter === "all" && !onlyNotDownloaded ? "Bora começar esse álbum?" : "Nada por aqui ainda."}</EstadoFotos>
+        <PhotoGrid
+          photos={photos}
+          personOf={personOf}
+          selectedIds={selection.ids}
+          onToggle={selection.toggle}
+          onOpen={setOpened}
+          onDownloaded={downloads.mark}
+        />
+        {photos.length === 0 && !list.loading && !list.error && (
+          <EstadoFotos titulo="Cadê as fotos? 👀">{filter === "all" ? "Bora começar esse álbum?" : "Nada por aqui ainda."}</EstadoFotos>
         )}
-        {list.photos.length === 0 && list.loading && <Loading />}
+        {photos.length === 0 && list.loading && <Loading />}
         {list.hasMore && (
           <SecondaryButton className="self-center" disabled={list.loading} onClick={list.loadMore}>
             Carregar mais
@@ -163,10 +158,10 @@ function GroupView({ groupId }: { groupId: string }) {
         )}
       </section>
 
-      <SelectionBar selected={selected} groupNames={{ [groupId]: name }} onClear={selection.clear} onDownloaded={list.markDownloaded} />
+      <SelectionBar selected={selected} groupNames={{ [groupId]: name }} onClear={selection.clear} onDownloaded={downloads.mark} />
       {opened && (
         <PhotoViewer
-          photos={list.photos}
+          photos={photos}
           personOf={personOf}
           opened={opened}
           onMove={setOpened}
@@ -174,7 +169,7 @@ function GroupView({ groupId }: { groupId: string }) {
           onChanged={changed}
           onDeleted={deleted}
           onReprocessed={reprocessed}
-          onDownloaded={list.markDownloaded}
+          onDownloaded={downloads.mark}
         />
       )}
     </>

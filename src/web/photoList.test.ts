@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PhotoPage } from "./api";
-import { fetchThrough, mergePhotos, notDownloaded, withDownloaded } from "./photoList";
+import { fetchThrough, mergePhotos, withDownloaded } from "./photoList";
 import { photoOf } from "./testing";
 
 const at = (id: string, minute: number, fields = {}) =>
@@ -64,14 +64,9 @@ describe("fetchThrough", () => {
 describe("download history in the list", () => {
   const list = [at("c", 3, { downloaded: true }), at("b", 2), at("a", 1)];
 
-  it("counts as new only what I have not downloaded", () => {
-    expect(ids(notDownloaded(list))).toEqual(["b", "a"]);
-  });
-
   it("keeps a photo known as downloaded so when an older answer says otherwise", () => {
     const marked = withDownloaded(list, new Set(["b"]));
     expect(marked.map((photo) => photo.downloaded)).toEqual([true, true, false]);
     expect(marked[2]).toBe(list[2]);
-    expect(ids(notDownloaded(marked))).toEqual(["a"]);
   });
 });

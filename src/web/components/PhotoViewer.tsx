@@ -1,14 +1,15 @@
 import * as api from "../api";
 import type { Photo, PhotoTag } from "../api";
-import { Avatar, botaoPrincipalVariants, FotoTelaCheia, type FotoTelaCheiaItem } from "../design-system";
+import { Avatar, BotaoPrincipal, FotoTelaCheia, type FotoTelaCheiaItem } from "../design-system";
 import { cn } from "../design-system/lib/utils";
+import { saveOriginal } from "../download";
 import { formatBytes, formatDate } from "../format";
 import { useAction } from "../hooks";
 import type { PersonOf } from "../people";
 import { useSession } from "../session";
 import { viewerPhotos } from "../viewerPhotos";
 import { STATUS_LABEL } from "./PhotoGrid";
-import { ConfirmButton, ErrorText, SecondaryButton, TextButton } from "./ui";
+import { ConfirmButton, DownloadedSeal, ErrorText, SecondaryButton, TextButton } from "./ui";
 
 function appearanceText(photo: Photo): string {
   if (photo.myTag === "me") return "Você marcou que tá nessa foto.";
@@ -43,14 +44,15 @@ interface PhotoActionsProps {
   onDeleted: (photoId: string) => void;
   /** The API answers a reprocess request without the photo: the owner of the list reads it again. */
   onReprocessed: () => void;
-  /** The original link was followed: the API counts the photo as downloaded from the request on. */
-  onDownloaded?: (photos: Photo[]) => void;
+  /** The original was saved: the photo shows as downloaded from then on. */
+  onDownloaded: (photos: Photo[]) => void;
 }
 
 /** Everything that acts on the photo, kept below the stage so nothing is drawn over the image. */
 function PhotoActions({ photo, personOf, onChanged, onDeleted, onReprocessed, onDownloaded }: PhotoActionsProps) {
   const { user } = useSession();
   const action = useAction();
+  const download = useAction();
 
   const tag = (value: PhotoTag | null) => action.run(async () => onChanged(await api.setPhotoTag(photo.id, value)));
   const remove = () =>
@@ -103,9 +105,18 @@ function PhotoActions({ photo, personOf, onChanged, onDeleted, onReprocessed, on
         </div>
       )}
       <ErrorText message={action.error} />
-      <a className={botaoPrincipalVariants()} href={photo.originalUrl} download={photo.filename} onClick={() => onDownloaded?.([photo])}>
-        Baixar original
-      </a>
+      <ErrorText message={download.error} />
+      <div className="flex items-center gap-3">
+        <BotaoPrincipal
+          type="button"
+          className="min-w-0 flex-1"
+          carregando={download.busy}
+          onClick={() => void download.run(() => saveOriginal(photo, onDownloaded))}
+        >
+          {download.busy ? "Baixando…" : photo.downloaded ? "Baixar de novo" : "Baixar original"}
+        </BotaoPrincipal>
+        {photo.downloaded && <DownloadedSeal />}
+      </div>
     </div>
   );
 }

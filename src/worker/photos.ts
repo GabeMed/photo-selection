@@ -446,32 +446,18 @@ function readFilter(filter: string, viewer: User): FilterCondition {
   throw invalidRequest('O filtro precisa ser "all", "mine", "unclaimed" ou "user:<id>".');
 }
 
-/** Absent → every photo; `false` → only the ones the viewer has not downloaded yet. */
-function readOnlyNotDownloaded(downloaded: string | undefined): boolean {
-  if (downloaded === undefined) return false;
-  if (downloaded === "false") return true;
-  throw invalidRequest('O parâmetro "downloaded" só aceita "false".');
-}
-
-interface PhotoListQuery {
-  filter: string;
-  onlyNotDownloaded: boolean;
-  cursor: string | undefined;
-}
-
-async function listGroupPhotos(db: D1Database, viewer: User, groupId: string, query: PhotoListQuery) {
-  const condition = readFilter(query.filter, viewer);
+async function listGroupPhotos(db: D1Database, viewer: User, groupId: string, filter: string, cursor: string | undefined) {
+  const condition = readFilter(filter, viewer);
   const { results } = await db
     .prepare(
       `${PHOTO_VIEW_SQL}
        WHERE p.group_id = ?2 AND ${LISTED_PHOTO}
          AND (?3 IS NULL OR (p.created_at, p.id) < (?3, ?4))
          AND (?5 IS NULL OR ${appearsIn("?5")})
-         AND (?6 = 0 OR NOT ${DOWNLOADED_BY_VIEWER})
-         AND (?7 = 0 OR ${isUnclaimed})
+         AND (?6 = 0 OR ${isUnclaimed})
        ${RECENT_FIRST} LIMIT ${PAGE_SIZE + 1}`,
     )
-    .bind(viewer.id, groupId, ...decodeCursor(query.cursor), condition.userId, query.onlyNotDownloaded ? 1 : 0, condition.unclaimed ? 1 : 0)
+    .bind(viewer.id, groupId, ...decodeCursor(cursor), condition.userId, condition.unclaimed ? 1 : 0)
     .all<PhotoViewRow>();
   const page = results.slice(0, PAGE_SIZE);
   const last = page[page.length - 1];
@@ -539,12 +525,7 @@ export const photoRoutes = new Hono<AppEnv>();
 photoRoutes.get("/groups/:id/photos", async (c) => {
   const user = c.get("user");
   const group = await requireMember(c.env.DB, user, c.req.param("id"));
-  const query = {
-    filter: c.req.query("filter") ?? "all",
-    onlyNotDownloaded: readOnlyNotDownloaded(c.req.query("downloaded")),
-    cursor: c.req.query("cursor"),
-  };
-  return c.json(await listGroupPhotos(c.env.DB, user, group.id, query));
+  return c.json(await listGroupPhotos(c.env.DB, user, group.id, c.req.query("filter") ?? "all", c.req.query("cursor")));
 });
 
 photoRoutes.post("/groups/:id/photos", async (c) => {

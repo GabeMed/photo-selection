@@ -1,4 +1,4 @@
-import { ArrowLeft, X } from "lucide-react";
+import { ArrowLeft, Check, CheckCheck, X } from "lucide-react";
 import { useEffect, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { BotaoPrincipal, botaoPrincipalVariants, EstadoFotos, type BotaoPrincipalProps } from "../design-system";
@@ -126,6 +126,41 @@ export function Chip({ pressed, className, ...props }: ButtonHTMLAttributes<HTML
     />
   );
 }
+
+/** "Select all" as an icon: filled in ink while every photo shown is selected, when a tap clears the selection. */
+export function SelectAllButton({ allSelected, onClick }: { allSelected: boolean; onClick: () => void }) {
+  const label = allSelected ? "Limpar seleção" : "Selecionar todas";
+  return (
+    <button
+      type="button"
+      aria-pressed={allSelected}
+      aria-label={label}
+      title={label}
+      className={cn(
+        "grid size-11 shrink-0 place-items-center rounded-pill border-grosso border-tinta active:translate-x-0.5 active:translate-y-0.5 active:shadow-none",
+        allSelected ? "bg-tinta text-papel" : "bg-card text-card-foreground shadow-pop-sm",
+        FOCUS_RING,
+      )}
+      onClick={onClick}
+    >
+      <CheckCheck className="size-6" strokeWidth={2.5} aria-hidden />
+    </button>
+  );
+}
+
+/** The media apps' "saved" mark: a status on a photo I already downloaded, never a control. */
+export const DownloadedSeal = ({ className }: { className?: string }) => (
+  <span
+    className={cn(
+      "pointer-events-none grid size-6 shrink-0 select-none place-items-center rounded-pill border-grosso border-tinta bg-sucesso text-tinta ring-2 ring-palco-foreground",
+      className,
+    )}
+    title="Você já baixou"
+  >
+    <Check className="size-3.5" strokeWidth={4} aria-hidden />
+    <span className="sr-only">Você já baixou</span>
+  </span>
+);
 
 export function ProgressBar({ value, max, label }: { value: number; max: number; label: string }) {
   const percent = max > 0 ? Math.min(100, (value / max) * 100) : 0;

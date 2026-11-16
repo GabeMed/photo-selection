@@ -258,21 +258,11 @@ export const joinInvite = async (token: string) =>
 
 // ---- Photos ----
 
-export interface PhotoListFilter {
-  filter: PhotoFilter;
-  /** Only the photos I have not downloaded yet; combines with `filter`. */
-  onlyNotDownloaded: boolean;
-}
-
-export function photoListQuery({ filter, onlyNotDownloaded }: PhotoListFilter, cursor?: string): URLSearchParams {
+export function listGroupPhotos(groupId: string, filter: PhotoFilter, cursor?: string): Promise<PhotoPage> {
   const query = new URLSearchParams({ filter });
-  if (onlyNotDownloaded) query.set("downloaded", "false");
   if (cursor) query.set("cursor", cursor);
-  return query;
+  return getJson<PhotoPage>(`/api/groups/${groupId}/photos?${query}`);
 }
-
-export const listGroupPhotos = (groupId: string, listFilter: PhotoListFilter, cursor?: string) =>
-  getJson<PhotoPage>(`/api/groups/${groupId}/photos?${photoListQuery(listFilter, cursor)}`);
 
 export const listMyPhotos = async () => (await getJson<{ groups: MyPhotosGroup[] }>("/api/me/photos")).groups;
 
@@ -343,6 +333,9 @@ const readBlob = (response: Response) =>
 
 /** For the share sheet: not counted as a download until `recordDownloads` says the sheet took it. */
 export const downloadOriginal = async (photo: Photo) => readBlob(await send(`${photo.originalUrl}?record=0`));
+
+/** The API records the download as mine as it answers. */
+export const downloadAndRecordOriginal = async (photo: Photo) => readBlob(await send(photo.originalUrl));
 
 export const recordDownloads = async (photoIds: string[]) => void (await sendJson("POST", "/api/downloads", { photoIds }));
 
