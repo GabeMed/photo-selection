@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { safeNextPath, signInWithGoogle } from "../src/worker/auth";
-import { ADMIN_EMAIL, ADMIN_SETUP_CODE, api, createGroup, env, expectError, join, json, login, signup, signupAdmin } from "./helpers";
+import { ADMIN_EMAIL, ADMIN_SETUP_CODE, api, createGroup, env, expectError, groupWith, join, json, login, signup, signupAdmin } from "./helpers";
 
 describe("accounts", () => {
   it("keeps the account across devices: sign up, log out, log in again", async () => {
@@ -101,7 +101,11 @@ describe("A1: groups and invites", () => {
     const group = await createGroup(admin, "Chapada");
     await expectError(api(`/api/groups/${group.id}`, { as: ana }), 404, "not_found");
     const invite = await json(api(`/api/invites/${group.inviteToken}`, { as: ana }));
-    expect(invite).toEqual({ group: { id: group.id, name: "Chapada", memberCount: 1 }, alreadyMember: false });
+    const adminMember = { id: admin.id, name: "Admin" };
+    expect(invite).toEqual({
+      group: { id: group.id, name: "Chapada", memberCount: 1, invitedBy: adminMember, members: [adminMember] },
+      alreadyMember: false,
+    });
     await expectError(api(`/api/invites/${group.inviteToken}`), 401, "unauthorized");
 
     await join(ana, group);
@@ -109,8 +113,37 @@ describe("A1: groups and invites", () => {
     await join(bia, group);
 
     const seenByBia = await json(api(`/api/groups/${group.id}`, { as: bia }));
-    expect(seenByBia.group.members.map((member: any) => member.name)).toEqual(["Admin", "Ana", "Bia"]);
-    expect((await json(api("/api/groups", { as: ana }))).groups).toMatchObject([{ id: group.id, name: "Chapada", memberCount: 3 }]);
+    // Ana and Bia may join in the same millisecond; the order itself is covered below.
+    expect(seenByBia.group.members.map((member: any) => member.name).sort()).toEqual(["Admin", "Ana", "Bia"]);
+    const [listed] = (await json(api("/api/groups", { as: ana }))).groups;
+    expect(listed).toMatchObject({ id: group.id, name: "Chapada", memberCount: 3 });
+    const { created_at } = (await env.DB.prepare("SELECT created_at FROM groups WHERE id = ?1").bind(group.id).first<{ created_at: string }>())!;
+    expect(listed.createdAt).toBe(created_at);
+    expect(new Date(listed.createdAt).toISOString()).toBe(listed.createdAt);
     await expectError(api("/api/invites/not-a-token", { as: ana }), 404, "not_found");
+  });
+
+  it("lists members in the order they joined, ties broken by id, and shows at most 8 on the invite", async () => {
+    const { admin, group, friends } = await groupWith("Zeca", "Ana", "Bia", "Caio", "Duda", "Edu", "Fabi", "Gil", "Hugo");
+    const joinedAt = (user: { id: string }, at: string) =>
+      env.DB.prepare("UPDATE memberships SET joined_at = ?3 WHERE group_id = ?1 AND user_id = ?2").bind(group.id, user.id, at).run();
+    // Zeca joined first, so by name he would come last; Ana and Bia joined in the same millisecond.
+    const [zeca, ana, bia] = friends;
+    await joinedAt(admin, "2026-01-01T00:00:00.000Z");
+    await joinedAt(zeca, "2026-01-01T00:00:01.000Z");
+    await joinedAt(bia, "2026-01-01T00:00:02.000Z");
+    await joinedAt(ana, "2026-01-01T00:00:02.000Z");
+    for (const [index, friend] of friends.slice(3).entries()) await joinedAt(friend, `2026-01-01T00:00:0${3 + index}.000Z`);
+    const tied = [ana, bia].sort((one, other) => (one.id < other.id ? -1 : 1));
+    const expected = [admin, zeca, ...tied, ...friends.slice(3)].map((user) => user.id);
+
+    const detail = await json(api(`/api/groups/${group.id}`, { as: ana }));
+    expect(detail.group.members.map((member: { id: string }) => member.id)).toEqual(expected);
+
+    const outsider = await signup("Ivo");
+    const invite = await json(api(`/api/invites/${group.inviteToken}`, { as: outsider }));
+    expect(invite.group.memberCount).toBe(10);
+    expect(invite.group.invitedBy).toEqual({ id: admin.id, name: "Admin" });
+    expect(invite.group.members.map((member: { id: string }) => member.id)).toEqual(expected.slice(0, 8));
   });
 });

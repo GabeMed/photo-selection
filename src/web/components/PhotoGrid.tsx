@@ -1,7 +1,7 @@
 import type { Photo, PhotoStatus } from "../api";
 import { CartaoFoto, Mascote } from "../design-system";
 import { cn } from "../design-system/lib/utils";
-import { toPessoa } from "../people";
+import type { PersonOf } from "../people";
 
 /** What a tile says while the photo has no thumbnail. */
 export const STATUS_LABEL: Record<PhotoStatus, string> = {
@@ -29,19 +29,20 @@ function splitIntoColumns(photos: Photo[]): Photo[][] {
 
 interface PhotoTileProps {
   photo: Photo;
+  personOf: PersonOf;
   selected: boolean;
   onToggle: (photo: Photo) => void;
   onOpen: (photo: Photo) => void;
 }
 
-function PhotoTile({ photo, selected, onToggle, onOpen }: PhotoTileProps) {
+function PhotoTile({ photo, personOf, selected, onToggle, onOpen }: PhotoTileProps) {
   return (
     <li className="relative">
       <CartaoFoto
         src={photo.thumbUrl ?? undefined}
         largura={photo.width ?? 1}
         altura={photo.height ?? 1}
-        autor={toPessoa({ id: photo.uploaderId, name: photo.uploaderName })}
+        autor={personOf({ id: photo.uploaderId, name: photo.uploaderName })}
         descricao={photo.filename}
         className={cn(!photo.thumbUrl && "border-grosso border-dashed border-tinta bg-muted", selected && "ring-4 ring-primary")}
         onClick={() => onOpen(photo)}
@@ -72,18 +73,20 @@ function PhotoTile({ photo, selected, onToggle, onOpen }: PhotoTileProps) {
 
 interface PhotoGridProps {
   photos: Photo[];
+  /** The color of each uploader on this page. */
+  personOf: PersonOf;
   selectedIds: ReadonlySet<string>;
   onToggle: (photo: Photo) => void;
   onOpen: (photo: Photo) => void;
 }
 
-export function PhotoGrid({ photos, selectedIds, onToggle, onOpen }: PhotoGridProps) {
+export function PhotoGrid({ photos, personOf, selectedIds, onToggle, onOpen }: PhotoGridProps) {
   return (
     <div className="grid grid-cols-2 items-start gap-3">
       {splitIntoColumns(photos).map((column, index) => (
         <ul key={index} className="flex flex-col gap-3">
           {column.map((photo) => (
-            <PhotoTile key={photo.id} photo={photo} selected={selectedIds.has(photo.id)} onToggle={onToggle} onOpen={onOpen} />
+            <PhotoTile key={photo.id} photo={photo} personOf={personOf} selected={selectedIds.has(photo.id)} onToggle={onToggle} onOpen={onOpen} />
           ))}
         </ul>
       ))}

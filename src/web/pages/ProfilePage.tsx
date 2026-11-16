@@ -1,8 +1,9 @@
 import { useState, type ChangeEvent, type FormEvent } from "react";
 import * as api from "../api";
-import { ConfirmButton, ErrorText, Field, FilePickButton, Notice, SecondaryButton } from "../components/ui";
-import { Avatar, BarraAcaoFixa, EstadoFotos } from "../design-system";
-import { useAction } from "../hooks";
+import { ConfirmButton, ErrorNotice, ErrorText, Field, FilePickButton, Notice, SecondaryButton } from "../components/ui";
+import { Avatar, BarraAcaoFixa, CarimboViagem, corCarimbo, EstadoFotos } from "../design-system";
+import { formatMonthYear } from "../format";
+import { useAction, useLoad } from "../hooks";
 import { userAsPessoa, useSession } from "../session";
 
 const MAX_SELFIES = 5;
@@ -139,6 +140,27 @@ function Selfies() {
   );
 }
 
+/** One stamp per group, like a passport: the trip's name and when the group was created. */
+function TripStamps() {
+  const groups = useLoad(api.listGroups, []);
+  if (groups.error) return <ErrorNotice error={groups.error} />;
+  if (!groups.data?.length) return null;
+  return (
+    <section className="flex flex-col gap-3" aria-labelledby="stamps">
+      <h2 id="stamps" className="text-xl font-semibold">
+        Seus carimbos
+      </h2>
+      <ul className="flex flex-wrap justify-center gap-4">
+        {groups.data.map((group) => (
+          <li key={group.id}>
+            <CarimboViagem nome={group.name} data={formatMonthYear(group.createdAt)} cor={corCarimbo(group.id)} />
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 export function ProfilePage() {
   const { user } = useSession();
   return (
@@ -148,6 +170,7 @@ export function ProfilePage() {
         <h1 className="text-3xl font-bold">Oi, {user.name}!</h1>
         <p className="text-muted-foreground">{user.email}</p>
       </header>
+      <TripStamps />
       <Selfies />
       <NameForm />
       <PasswordForm />

@@ -45,14 +45,16 @@ export interface PilhaAvataresProps extends React.HTMLAttributes<HTMLDivElement>
   pessoas: Pessoa[];
   /** How many avatars to show before "+N". */
   max?: number;
+  /** How many people there are in all, when `pessoas` holds only some of them. Defaults to `pessoas.length`. */
+  total?: number;
   size?: "sm" | "md";
 }
 
 /** Overlapping avatars of who's on the trip. */
 export const PilhaAvatares = React.forwardRef<HTMLDivElement, PilhaAvataresProps>(
-  ({ pessoas, max = 4, size = "sm", className, ...props }, ref) => {
+  ({ pessoas, max = 4, total = pessoas.length, size = "sm", className, ...props }, ref) => {
     const visiveis = pessoas.slice(0, max);
-    const resto = pessoas.length - visiveis.length;
+    const resto = total - visiveis.length;
     return (
       <div ref={ref} className={cn("flex items-center", className)} {...props}>
         {visiveis.map((p, i) => (

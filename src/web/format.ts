@@ -14,6 +14,14 @@ export const gbToBytes = (gb: number) => Math.round(gb * GIB);
 export const formatDate = (iso: string) =>
   new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" });
 
+const SHORT_MONTH = new Intl.DateTimeFormat("pt-BR", { month: "short" });
+
+/** Month and year, short: "nov 2026". */
+export function formatMonthYear(iso: string): string {
+  const date = new Date(iso);
+  return `${SHORT_MONTH.format(date).replace(".", "")} ${date.getFullYear()}`;
+}
+
 export const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
 
 function parseUrl(value: string, base: string): URL | null {

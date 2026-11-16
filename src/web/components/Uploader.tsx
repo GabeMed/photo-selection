@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import type { Photo } from "../api";
 import { BarraAcaoFixa, BarraProgressoEnvio, BotaoPrincipal, EstadoFotos } from "../design-system";
+import { isAppleTouchDevice } from "../download";
 import { formatBytes, plural } from "../format";
 import { useWakeLock } from "../hooks";
 import { isWaitingForRetry, type UploadItem, type UploadStatus } from "../uploadQueue";
@@ -128,10 +129,12 @@ export function Uploader({ groupId, showAction, onUploaded, onSettled }: Uploade
 
   return (
     <section className="flex flex-col gap-3" aria-label="Enviar fotos">
-      <Notice tone="info">
-        <strong>No iPhone:</strong> no seletor de fotos, toca em <strong>Opções</strong> e escolhe o formato <strong>Atual</strong> pra
-        mandar o original. Deixa a tela ligada e essa aba aberta até o envio acabar.
-      </Notice>
+      {isAppleTouchDevice() && (
+        <Notice tone="info">
+          <strong>No iPhone ou iPad:</strong> no seletor de fotos, toca em <strong>Opções</strong> e escolhe o formato <strong>Atual</strong> pra
+          mandar o original. Deixa a tela ligada e essa aba aberta até o envio acabar.
+        </Notice>
+      )}
 
       {queue.items.length > 0 && (
         <>

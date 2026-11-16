@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { safeNextPath } from "./format";
+import { formatMonthYear, safeNextPath } from "./format";
 
 const ORIGIN = "https://photos.test";
+
+describe("formatMonthYear", () => {
+  it("writes the short month without the dot, and the year", () => {
+    expect(formatMonthYear("2026-11-17T12:00:00.000Z")).toBe("nov 2026");
+    expect(formatMonthYear("2027-05-15T12:00:00.000Z")).toBe("mai 2027");
+  });
+});
 
 describe("safeNextPath", () => {
   it("keeps a path of the site, with its query and fragment", () => {

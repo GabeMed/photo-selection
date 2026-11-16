@@ -4,6 +4,7 @@ import { ApiError } from "../api";
 import { ErrorNotice, ErrorText, Loading, SecondaryButton } from "../components/ui";
 import { BarraAcaoFixa, BotaoPrincipal, botaoPrincipalVariants, CartaoConvite, EstadoFotos, Mascote } from "../design-system";
 import { useAction, useLoad } from "../hooks";
+import { groupPersonOf } from "../people";
 
 export function InvitePage() {
   const token = useParams().token!;
@@ -30,6 +31,7 @@ export function InvitePage() {
   }
   if (!invite.data) return <Loading />;
   const { group, alreadyMember } = invite.data;
+  const personOf = groupPersonOf(group.members);
   const join = () =>
     action.run(async () => {
       await api.joinInvite(token);
@@ -42,7 +44,12 @@ export function InvitePage() {
         <Mascote pose="curioso" size="sm" />
         <p className="font-display text-base font-semibold">Ó o convite ✈️</p>
       </div>
-      <CartaoConvite titulo={group.name} totalPessoas={group.memberCount}>
+      <CartaoConvite
+        titulo={group.name}
+        quemChamou={personOf(group.invitedBy)}
+        pessoas={group.members.map(personOf)}
+        totalPessoas={group.memberCount}
+      >
         <p className="font-semibold">{alreadyMember ? "Você já tá dentro!" : "Entra e sobe as fotos que você tirou."}</p>
       </CartaoConvite>
       <ErrorText message={action.error} />

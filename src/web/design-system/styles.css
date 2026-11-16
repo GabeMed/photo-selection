@@ -117,7 +117,7 @@
   --card-foreground: var(--tinta);
   --popover: oklch(1 0 0);
   --popover-foreground: var(--tinta);
-  --primary: oklch(0.66 0.25 355);
+  --primary: oklch(0.59 0.25 355);
   --primary-foreground: oklch(1 0 0);
   --secondary: oklch(0.92 0.06 85);
   --secondary-foreground: var(--tinta);
@@ -125,7 +125,7 @@
   --muted-foreground: oklch(0.48 0.04 300);
   --accent: oklch(0.88 0.17 95);
   --accent-foreground: var(--tinta);
-  --destructive: oklch(0.6 0.22 28);
+  --destructive: oklch(0.59 0.22 28);
   --destructive-foreground: oklch(1 0 0);
   --sucesso: oklch(0.72 0.18 150);
   --border: var(--tinta);
@@ -217,4 +217,11 @@
   .sticker, .sticker-recorte { animation: none; transition: none; }
   .sticker:active, .sticker-recorte:active { translate: none; }
   .animate-spin { animation: none; }
+}
+
+/* Stamp ink: every trip color is deepened with tinta so the light ones
+   (amarelo, turquesa, verde) stay readable on papel (at least 3:1). Mixed in
+   oklab, not oklch: tinta is nearly gray and its hue would drag the ink's hue. */
+.tinta-carimbo {
+  color: color-mix(in oklab, currentColor 55%, var(--tinta));
 }

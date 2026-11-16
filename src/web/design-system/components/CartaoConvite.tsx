@@ -28,7 +28,7 @@ export const CartaoConvite = React.forwardRef<HTMLElement, CartaoConviteProps>(
         </p>
         <h1 className="mt-1 text-3xl font-bold leading-none">{titulo}</h1>
         <div className="mt-2 flex items-center justify-center gap-2">
-          {pessoas && <PilhaAvatares pessoas={pessoas} max={5} size="sm" />}
+          {pessoas && <PilhaAvatares pessoas={pessoas} max={8} total={totalPessoas} size="sm" />}
           <p className="text-sm font-semibold">{totalPessoas === 1 ? "1 já tá dentro" : `${totalPessoas} já tão dentro`}</p>
         </div>
       </div>

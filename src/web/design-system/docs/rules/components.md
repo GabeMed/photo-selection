@@ -1,11 +1,11 @@
 # Components
 
-Component catalog for **Cadê as Fotos?**. Import all components from `src/web/design-system`.
+Component catalog for **Cadê as Fotos?**. Import all components from the `src/web/design-system` folder, by relative path (`../design-system` from a page or a component of the app).
 
 ### Avatar
 
 ```ts
-import { Avatar } from "src/web/design-system"
+import { Avatar } from "../design-system"
 ```
 
 **Props:**
@@ -18,13 +18,13 @@ import { Avatar } from "src/web/design-system"
 ### BarraAcaoFixa
 
 ```ts
-import { BarraAcaoFixa } from "src/web/design-system"
+import { BarraAcaoFixa } from "../design-system"
 ```
 
 ### BarraProgressoEnvio
 
 ```ts
-import { BarraProgressoEnvio } from "src/web/design-system"
+import { BarraProgressoEnvio } from "../design-system"
 ```
 
 **Props:**
@@ -40,7 +40,7 @@ import { BarraProgressoEnvio } from "src/web/design-system"
 ### BotaoPrincipal
 
 ```ts
-import { BotaoPrincipal } from "src/web/design-system"
+import { BotaoPrincipal } from "../design-system"
 ```
 
 Single primary action; loading is distinct from disabled.
@@ -68,10 +68,10 @@ _Uso real_
 ### CarimboViagem
 
 ```ts
-import { CarimboViagem } from "src/web/design-system"
+import { CarimboViagem } from "../design-system"
 ```
 
-Round trip souvenir displayed on the profile.
+Round trip souvenir displayed on the profile: one stamp per group the person is in.
 
 **Props:**
 
@@ -79,12 +79,18 @@ Round trip souvenir displayed on the profile.
 |---|---|---|
 | `nome` | string | `—` |
 | `data` | string | `—` |
+| `cor` | primaria · turquesa · laranja · amarelo · verde · azul · roxo | `primaria` |
+| `size` | sm · md | `md` |
+
+- `data` is the month and year the group was created, short and in pt-BR: "nov 2026" (`formatMonthYear` in `src/web/format.ts`).
+- `cor` comes from `corCarimbo(group.id)`: the same trip always gets the same ink.
+- A name longer than the top arc holds (16 letters) is cut with "…" (`nomeNoCarimbo`); the full name stays in the stamp's `aria-label`.
 
 **Examples:**
 
 _Uso real_
 ```tsx
-<CarimboViagem nome="Chapada 2026" data="12–18 out" />
+<CarimboViagem nome={group.name} data={formatMonthYear(group.createdAt)} cor={corCarimbo(group.id)} />
 ```
 
 **Avoid:**
@@ -94,7 +100,7 @@ _Uso real_
 ### CartaoConvite
 
 ```ts
-import { CartaoConvite } from "src/web/design-system"
+import { CartaoConvite } from "../design-system"
 ```
 
 **Props:**
@@ -105,13 +111,16 @@ import { CartaoConvite } from "src/web/design-system"
 | `local` | string | `—` |
 | `datas` | string | `—` |
 | `capa` | string | `—` |
-| `quemChamou` | any | `—` |
-| `pessoas` | any | `—` |
+| `quemChamou` | Pessoa | `—` |
+| `pessoas` | Pessoa[] | `—` |
+| `totalPessoas` | number | `pessoas.length` |
+
+In this site the invite shows the group's name, who invited (the group's creator, `invitedBy`) and the stack of the first members in join order (`members`, up to 8), with "+N" for everyone else (`totalPessoas` = `memberCount`). Their colors come from `groupPersonOf(members)`, the same as on the group page. All of it fits on a 390×844 screen without scrolling. No `capa`, `local` or `datas`: the site has no cover, place or dates for a group.
 
 ### CartaoFoto
 
 ```ts
-import { CartaoFoto } from "src/web/design-system"
+import { CartaoFoto } from "../design-system"
 ```
 
 Original-aspect-ratio grid photo with optional separate sticker controls.
@@ -141,7 +150,7 @@ _Uso real_
 ### CartaoViagem
 
 ```ts
-import { CartaoViagem } from "src/web/design-system"
+import { CartaoViagem } from "../design-system"
 ```
 
 **Props:**
@@ -158,7 +167,7 @@ import { CartaoViagem } from "src/web/design-system"
 ### EstadoFotos
 
 ```ts
-import { EstadoFotos } from "src/web/design-system"
+import { EstadoFotos } from "../design-system"
 ```
 
 Compose empty, waiting, successful and failed photo states.
@@ -183,7 +192,7 @@ _Uso real_
 ### FotoTelaCheia
 
 ```ts
-import { FotoTelaCheia } from "src/web/design-system"
+import { FotoTelaCheia } from "../design-system"
 ```
 
 **Props:**
@@ -197,7 +206,7 @@ import { FotoTelaCheia } from "src/web/design-system"
 ### Logo
 
 ```ts
-import { Logo } from "src/web/design-system"
+import { Logo } from "../design-system"
 ```
 
 Brand wordmark, only Cadê?.
@@ -222,7 +231,7 @@ _Uso real_
 ### Mascote
 
 ```ts
-import { Mascote } from "src/web/design-system"
+import { Mascote } from "../design-system"
 ```
 
 Original question-mark mascot for invitation and status messages.
@@ -249,21 +258,24 @@ _Uso real_
 ### PilhaAvatares
 
 ```ts
-import { PilhaAvatares } from "src/web/design-system"
+import { PilhaAvatares } from "../design-system"
 ```
 
 **Props:**
 
 | Prop | Type | Default |
 |---|---|---|
-| `pessoas` | any | `—` |
+| `pessoas` | Pessoa[] | `—` |
 | `max` | number | `4` |
+| `total` | number | `pessoas.length` |
 | `size` | sm · md | `sm` |
+
+`total` is for a list that holds only some of the people: "+N" counts everyone not shown.
 
 ### Reacao
 
 ```ts
-import { Reacao } from "src/web/design-system"
+import { Reacao } from "../design-system"
 ```
 
 Toggle one of eight original stickers on a grid photo.
@@ -293,6 +305,8 @@ _Uso real_
 ### TelaCelular
 
 ```ts
-import { TelaCelular } from "src/web/design-system"
+import { TelaCelular } from "../design-system"
 ```
+
+Keeps room at the bottom for a `BarraAcaoFixa`. A bar whose height changes (the selection bar) reserves exactly its own height with a spacer marked `data-reserva-barra`; while that spacer is on the page, `TelaCelular` drops its own bottom room, so the content ends right above the bar.
 

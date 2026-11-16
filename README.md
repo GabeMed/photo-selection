@@ -5,7 +5,7 @@ Site para um grupo de amigos juntar as fotos de uma viagem: cada um sobe as foto
 ## Como é feito
 
 - **Worker da Cloudflare** (TypeScript, Hono) em `src/worker/`: API em `/api/*`, contas, grupos, cotas, download e a fila de processamento, tocada por um cron a cada minuto.
-- **Frontend** (React + Vite) em `src/web/`, servido como arquivos estáticos pelo mesmo Worker.
+- **Frontend** (React + Vite) em `src/web/`, servido como arquivos estáticos pelo mesmo Worker. O design system "Cadê as Fotos?" (tokens, componentes e regras em `docs/`) vive em `src/web/design-system/` e é editado ali mesmo.
 - **D1** para os registros (`migrations/`) e **R2** para os arquivos. O original é guardado byte a byte como chegou.
 - **Container `face-service`** (`face-service/`, Python): o único lugar que abre imagens. Gera a versão de tela e a miniatura, detecta rostos e devolve os vetores. Só o Worker fala com ele.
 

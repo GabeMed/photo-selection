@@ -45,8 +45,8 @@ export function SelectionBar({ selected, groupNames, onClear }: SelectionBarProp
 
   return (
     <>
-      {/* The bar is taller than the room the page keeps at its bottom: this keeps the last photos reachable above it. */}
-      <div aria-hidden style={{ height: barHeight }} />
+      {/* Exactly the bar's height, in place of the page's usual bottom room: the last photos end right above it. */}
+      <div aria-hidden data-reserva-barra style={{ height: barHeight }} />
       <BarraAcaoFixa ref={bar} role="region" aria-label="Fotos selecionadas" className="pt-4">
         <div className="flex flex-col gap-2 rounded-xl border-grosso border-tinta bg-card p-2 text-card-foreground shadow-pop">
           <div className="flex items-center justify-between gap-2 pl-2">

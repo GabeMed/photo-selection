@@ -46,6 +46,7 @@ export interface GroupCounts {
 export interface GroupSummary {
   id: string;
   name: string;
+  createdAt: string;
   memberCount: number;
   photoCount: number;
   usedBytes: number;
@@ -74,8 +75,14 @@ export interface InvitedGroup {
   memberCount: number;
 }
 
+/** What the invite shows before joining: who created the group and the first members, in join order. */
+export interface InviteDetails extends InvitedGroup {
+  invitedBy: Member;
+  members: Member[];
+}
+
 export interface Invite {
-  group: InvitedGroup;
+  group: InviteDetails;
   alreadyMember: boolean;
 }
 

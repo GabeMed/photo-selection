@@ -58,6 +58,7 @@ export async function loadPhotoFor(db: D1Database, user: User, photoId: string):
 }
 
 interface GroupSummaryRow extends GroupRow {
+  created_at: string;
   member_count: number;
   used_bytes: number;
   total: number;
@@ -70,6 +71,7 @@ export interface GroupSummary {
   id: string;
   name: string;
   inviteToken: string;
+  createdAt: string;
   memberCount: number;
   photoCount: number;
   usedBytes: number;
@@ -90,7 +92,7 @@ export interface GroupSelection {
 export async function loadGroupSummaries(db: D1Database, viewerId: string, selection: GroupSelection): Promise<GroupSummary[]> {
   const { results } = await db
     .prepare(
-      `SELECT g.id, g.name, g.invite_token, g.quota_bytes,
+      `SELECT g.id, g.name, g.invite_token, g.quota_bytes, g.created_at,
               (SELECT COUNT(*) FROM memberships m WHERE m.group_id = g.id) AS member_count,
               ${groupUsedBytesSql("g.id")} AS used_bytes,
               ${countPhotosSql("1")} AS total,
@@ -108,6 +110,7 @@ export async function loadGroupSummaries(db: D1Database, viewerId: string, selec
     id: row.id,
     name: row.name,
     inviteToken: row.invite_token,
+    createdAt: row.created_at,
     memberCount: row.member_count,
     photoCount: row.total,
     usedBytes: row.used_bytes,
@@ -117,14 +120,20 @@ export async function loadGroupSummaries(db: D1Database, viewerId: string, selec
   }));
 }
 
-async function loadMembers(db: D1Database, groupId: string): Promise<{ id: string; name: string }[]> {
+interface Member {
+  id: string;
+  name: string;
+}
+
+/** In the order they joined: the frontend gives each person a color by this position. */
+async function loadMembers(db: D1Database, groupId: string): Promise<Member[]> {
   const { results } = await db
     .prepare(
       `SELECT u.id, u.name FROM memberships m JOIN users u ON u.id = m.user_id
-       WHERE m.group_id = ?1 ORDER BY u.name`,
+       WHERE m.group_id = ?1 ORDER BY m.joined_at, m.user_id`,
     )
     .bind(groupId)
-    .all<{ id: string; name: string }>();
+    .all<Member>();
   return results;
 }
 
@@ -133,15 +142,20 @@ interface InvitedGroup {
   name: string;
   member_count: number;
   already_member: number;
+  invited_by_id: string;
+  invited_by_name: string;
 }
+
+/** How many members the invite shows by name; the rest are only counted. */
+const INVITE_MEMBERS_SHOWN = 8;
 
 async function loadInvite(db: D1Database, user: User, token: string): Promise<InvitedGroup> {
   const group = await db
     .prepare(
-      `SELECT g.id, g.name,
+      `SELECT g.id, g.name, u.id AS invited_by_id, u.name AS invited_by_name,
               (SELECT COUNT(*) FROM memberships m WHERE m.group_id = g.id) AS member_count,
               EXISTS (SELECT 1 FROM memberships m WHERE m.group_id = g.id AND m.user_id = ?2) AS already_member
-       FROM groups g WHERE g.invite_token = ?1`,
+       FROM groups g JOIN users u ON u.id = g.created_by WHERE g.invite_token = ?1`,
     )
     .bind(token, user.id)
     .first<InvitedGroup>();
@@ -166,9 +180,10 @@ export const groupRoutes = new Hono<AppEnv>();
 
 groupRoutes.get("/groups", async (c) => {
   const summaries = await loadGroupSummaries(c.env.DB, c.get("user").id, { memberOnly: true });
-  const groups = summaries.map(({ id, name, memberCount, photoCount, usedBytes, quotaBytes, myPhotoCount }) => ({
+  const groups = summaries.map(({ id, name, createdAt, memberCount, photoCount, usedBytes, quotaBytes, myPhotoCount }) => ({
     id,
     name,
+    createdAt,
     memberCount,
     photoCount,
     usedBytes,
@@ -189,7 +204,9 @@ groupRoutes.get("/groups/:id", async (c) => {
 
 groupRoutes.get("/invites/:token", async (c) => {
   const invited = await loadInvite(c.env.DB, c.get("user"), c.req.param("token"));
-  return c.json({ group: inviteJson(invited), alreadyMember: invited.already_member === 1 });
+  const members = (await loadMembers(c.env.DB, invited.id)).slice(0, INVITE_MEMBERS_SHOWN);
+  const invitedBy = { id: invited.invited_by_id, name: invited.invited_by_name };
+  return c.json({ group: { ...inviteJson(invited), invitedBy, members }, alreadyMember: invited.already_member === 1 });
 });
 
 groupRoutes.post("/invites/:token/join", async (c) => {

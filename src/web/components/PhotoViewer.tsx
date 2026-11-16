@@ -4,7 +4,7 @@ import { Avatar, botaoPrincipalVariants, FotoTelaCheia, type FotoTelaCheiaItem }
 import { cn } from "../design-system/lib/utils";
 import { formatBytes, formatDate } from "../format";
 import { useAction } from "../hooks";
-import { toPessoa } from "../people";
+import type { PersonOf } from "../people";
 import { useSession } from "../session";
 import { viewerPhotos } from "../viewerPhotos";
 import { STATUS_LABEL } from "./PhotoGrid";
@@ -37,6 +37,8 @@ const PRESSED = "bg-accent text-accent-foreground";
 
 interface PhotoActionsProps {
   photo: Photo;
+  /** The color of the uploader on this page. */
+  personOf: PersonOf;
   onChanged: (photo: Photo) => void;
   onDeleted: (photoId: string) => void;
   /** The API answers a reprocess request without the photo: the owner of the list reads it again. */
@@ -44,7 +46,7 @@ interface PhotoActionsProps {
 }
 
 /** Everything that acts on the photo, kept below the stage so nothing is drawn over the image. */
-function PhotoActions({ photo, onChanged, onDeleted, onReprocessed }: PhotoActionsProps) {
+function PhotoActions({ photo, personOf, onChanged, onDeleted, onReprocessed }: PhotoActionsProps) {
   const { user } = useSession();
   const action = useAction();
 
@@ -63,7 +65,7 @@ function PhotoActions({ photo, onChanged, onDeleted, onReprocessed }: PhotoActio
   return (
     <div className="mx-auto flex w-full max-w-coluna flex-col gap-3 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 text-palco-foreground">
       <div className="flex items-center gap-2 text-sm">
-        <Avatar pessoa={toPessoa({ id: photo.uploaderId, name: photo.uploaderName })} size="sm" />
+        <Avatar pessoa={personOf({ id: photo.uploaderId, name: photo.uploaderName })} size="sm" />
         <p className="min-w-0">
           <span className="font-bold">{photo.uploaderName}</span> · {formatDate(photo.createdAt)} · {formatBytes(photo.sizeBytes)}
           <br />

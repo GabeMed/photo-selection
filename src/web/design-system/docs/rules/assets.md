@@ -2,7 +2,7 @@
 
 These files are copied into `src/web/design-system/assets/` in this project — never generate, placeholder, or substitute an asset that exists here.
 
-Raw files import directly, e.g. `import logo from "src/web/design-system/assets/logos/logo.svg"`.
+Raw files import by relative path. The SVGs go through `Mascote` and `Reacao`, which import them with `?raw` so `var(--primary)` and the other tokens inside them resolve on the page.
 
 ## Icons
 

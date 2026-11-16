@@ -10,7 +10,7 @@ import { Uploader } from "../components/Uploader";
 import { Avatar, EstadoFotos, PilhaAvatares, type Pessoa } from "../design-system";
 import { plural } from "../format";
 import { useLoad, useSelection } from "../hooks";
-import { toPessoa } from "../people";
+import { groupPersonOf, type PersonOf } from "../people";
 import { useSession } from "../session";
 import { useGroupPhotos } from "../useGroupPhotos";
 
@@ -20,18 +20,19 @@ const isAwaitingAnalysis = (photo: Photo) => photo.status === "recebida" || phot
 
 interface FilterBarProps {
   group: GroupDetail;
+  personOf: PersonOf;
   filter: PhotoFilter;
   onChange: (filter: PhotoFilter) => void;
 }
 
-function FilterBar({ group, filter, onChange }: FilterBarProps) {
+function FilterBar({ group, personOf, filter, onChange }: FilterBarProps) {
   const { user } = useSession();
   const options: { value: PhotoFilter; label: string; person?: Pessoa }[] = [
     { value: "all", label: "Todas" },
     { value: "mine", label: "Minhas" },
     ...group.members
       .filter((member) => member.id !== user.id)
-      .map((member) => ({ value: `user:${member.id}` as const, label: member.name, person: toPessoa(member) })),
+      .map((member) => ({ value: `user:${member.id}` as const, label: member.name, person: personOf(member) })),
   ];
   return (
     <div className="-mx-4 flex gap-2 overflow-x-auto px-4 py-1" role="group" aria-label="Filtrar fotos">
@@ -71,6 +72,7 @@ function GroupView({ groupId }: { groupId: string }) {
   // A failed reload keeps the page: unmounting it would take the uploader away in the middle of a batch.
   if (!group.data) return group.error ? <ErrorNotice error={group.error} /> : <Loading />;
   const { name, members, counts, usedBytes, quotaBytes, inviteToken } = group.data;
+  const personOf = groupPersonOf(members);
   const opened = openedPhoto && (list.photos.find((photo) => photo.id === openedPhoto.id) ?? openedPhoto);
 
   const changeFilter = (next: PhotoFilter) => {
@@ -104,7 +106,7 @@ function GroupView({ groupId }: { groupId: string }) {
     <>
       <div className="flex flex-col gap-3">
         <PageHeader title={name} backTo="/" subtitle={`${plural(counts.total, "foto", "fotos")} · ${plural(members.length, "pessoa", "pessoas")}`}>
-          <PilhaAvatares pessoas={members.map((member) => toPessoa(member))} max={3} />
+          <PilhaAvatares pessoas={members.map(personOf)} max={3} />
         </PageHeader>
         {group.error && <ErrorNotice error={group.error} />}
         <div className="flex items-center gap-3">
@@ -118,7 +120,7 @@ function GroupView({ groupId }: { groupId: string }) {
       <Uploader groupId={groupId} showAction={selected.length === 0} onUploaded={uploaded} onSettled={group.reload} />
 
       <section className="flex flex-col gap-3" aria-label="Fotos do grupo">
-        <FilterBar group={group.data} filter={filter} onChange={changeFilter} />
+        <FilterBar group={group.data} personOf={personOf} filter={filter} onChange={changeFilter} />
         <div className="flex min-h-11 items-center justify-between gap-3">
           <span className="text-sm text-muted-foreground" role="status">
             {counts.processing > 0 && `${counts.processing} em análise`}
@@ -128,7 +130,7 @@ function GroupView({ groupId }: { groupId: string }) {
           {list.photos.length > 0 && <SecondaryButton onClick={() => selection.selectAll(list.photos)}>Selecionar todas</SecondaryButton>}
         </div>
         {list.error && <ErrorNotice error={list.error} />}
-        <PhotoGrid photos={list.photos} selectedIds={selection.ids} onToggle={selection.toggle} onOpen={setOpened} />
+        <PhotoGrid photos={list.photos} personOf={personOf} selectedIds={selection.ids} onToggle={selection.toggle} onOpen={setOpened} />
         {list.photos.length === 0 && !list.loading && !list.error && (
           <EstadoFotos titulo="Cadê as fotos? 👀">{filter === "all" ? "Bora começar esse álbum?" : "Nada por aqui ainda."}</EstadoFotos>
         )}
@@ -144,6 +146,7 @@ function GroupView({ groupId }: { groupId: string }) {
       {opened && (
         <PhotoViewer
           photos={list.photos}
+          personOf={personOf}
           opened={opened}
           onMove={setOpened}
           onClose={() => setOpened(null)}

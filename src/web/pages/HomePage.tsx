@@ -9,6 +9,7 @@ import { ErrorNotice, Loading, PageHeader, SecondaryButton, UsageBar } from "../
 import { BarraAcaoFixa, botaoPrincipalVariants, CartaoViagem, EstadoFotos } from "../design-system";
 import { plural } from "../format";
 import { useLoad, useSelection, type Selection } from "../hooks";
+import { toPessoa } from "../people";
 import { useSession } from "../session";
 
 interface GroupSectionProps {
@@ -30,7 +31,7 @@ function GroupPhotos({ photos, failed, selection, onOpen }: Omit<GroupSectionPro
       </EstadoFotos>
     );
   }
-  return <PhotoGrid photos={photos} selectedIds={selection.ids} onToggle={selection.toggle} onOpen={onOpen} />;
+  return <PhotoGrid photos={photos} personOf={toPessoa} selectedIds={selection.ids} onToggle={selection.toggle} onOpen={onOpen} />;
 }
 
 function GroupSection({ group, photos, failed, selection, onOpen }: GroupSectionProps) {
@@ -125,6 +126,7 @@ export function HomePage() {
       {opened && (
         <PhotoViewer
           photos={allPhotos}
+          personOf={toPessoa}
           opened={allPhotos.find((photo) => photo.id === opened.id) ?? opened}
           onMove={setOpened}
           onClose={() => setOpened(null)}
