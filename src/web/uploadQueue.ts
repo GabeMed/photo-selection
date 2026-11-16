@@ -44,7 +44,7 @@ export const PROGRESS_INTERVAL_MS = 250;
 /** Every later file would hit the same limit, so the batch stops. */
 const BATCH_STOPPING_CODES = new Set(["group_quota_exceeded", "user_quota_exceeded"]);
 /** The file itself is refused; sending it again cannot work. */
-const FILE_REFUSED_CODES = new Set(["file_too_large", "unsupported_type", "invalid_request"]);
+const FILE_REFUSED_CODES = new Set(["file_too_large", "unsupported_type", "invalid_request", "not_delivered"]);
 /** Replaces API messages that describe the request instead of the file. */
 const FRIENDLY_MESSAGES: Record<string, string> = { invalid_request: "Este arquivo não é uma foto que o site aceita." };
 const UNEXPECTED_MESSAGE = "Algo deu errado neste envio. Tente de novo.";
@@ -56,6 +56,20 @@ function contentTypeOf(file: File): string {
   if (file.type) return file.type;
   const extension = file.name.split(".").pop()!.toLowerCase();
   return TYPE_BY_EXTENSION[extension] ?? "";
+}
+
+/**
+ * In a large selection the iOS photo picker hands some photos over as a 135-byte property list
+ * instead of the image (WebKit bugs 256711 and 272996). The File is all the page has, so sending
+ * again cannot work: the person has to pick the photo again.
+ */
+const PLACEHOLDER_SIGNATURE = "bplist00";
+const PLACEHOLDER_MAX_BYTES = 1024;
+
+async function assertDelivered(file: File): Promise<void> {
+  if (file.size > PLACEHOLDER_MAX_BYTES) return;
+  if ((await file.slice(0, PLACEHOLDER_SIGNATURE.length).text()) !== PLACEHOLDER_SIGNATURE) return;
+  throw new ApiError(0, "not_delivered", "O iPhone não entregou essa foto. Escolhe ela de novo, num lote menor.");
 }
 
 export const isWaitingForRetry = (item: UploadItem) => item.status === "skipped" || (item.status === "failed" && item.retryable);
@@ -101,6 +115,7 @@ export function createUploadQueue({ api, groupId, onChange, onUploaded }: Upload
   };
 
   const sendToNewSlot = async ({ key, file }: UploadItem) => {
+    await assertDelivered(file);
     const slot = await api.reservePhotoSlot(groupId, { filename: file.name, contentType: contentTypeOf(file), sizeBytes: file.size });
     set(key, { uploadUrl: slot.uploadUrl });
     return api.uploadOriginal(slot.uploadUrl, file, (sentBytes) => reportProgress(key, sentBytes));

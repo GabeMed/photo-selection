@@ -131,8 +131,10 @@ export function Uploader({ groupId, showAction, onUploaded, onSettled }: Uploade
     <section className="flex flex-col gap-3" aria-label="Enviar fotos">
       {isAppleTouchDevice() && (
         <Notice tone="info">
-          <strong>No iPhone ou iPad:</strong> no seletor de fotos, toca em <strong>Opções</strong> e escolhe o formato <strong>Atual</strong> pra
-          mandar o original. Deixa a tela ligada e essa aba aberta até o envio acabar.
+          <strong>No iPhone ou iPad:</strong> escolhe até <strong>80 fotos por vez</strong>; com mais que isso o iPhone trava ou entrega
+          fotos quebradas. Enquanto um lote sobe, <strong>+ Mais fotos</strong> já aceita o próximo. No seletor, toca em{" "}
+          <strong>Opções</strong> e escolhe o formato <strong>Atual</strong> pra mandar o original. Depois de tocar em Adicionar, o iPhone
+          prepara as fotos sem mostrar nada: espera, pode levar alguns minutos. Deixa a tela ligada e essa aba aberta até o envio acabar.
         </Notice>
       )}
 

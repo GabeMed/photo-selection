@@ -100,6 +100,18 @@ describe("upload queue", () => {
     expect(state().items[0]).toMatchObject({ status: "failed", retryable: false, message: "Este arquivo não é uma foto que o site aceita." });
   });
 
+  it("refuses, for good and without asking for a slot, the placeholder iOS hands over in place of a photo", async () => {
+    const { queue, reserved, puts, statuses, state } = setup();
+    const placeholder = new File(["bplist00".padEnd(135, "x")], "quebrada", { type: "image/heic" });
+    const smallPhoto = new File(["x".repeat(135)], "pequena", { type: "image/jpeg" });
+    queue.add([placeholder, smallPhoto]);
+    await settle();
+    expect(statuses()).toEqual({ quebrada: "failed", pequena: "uploading" });
+    expect(reserved).toEqual(["pequena"]);
+    expect(puts.map((put) => put.file.name)).toEqual(["pequena"]);
+    expect(state().items[0]).toMatchObject({ retryable: false, message: "O iPhone não entregou essa foto. Escolhe ela de novo, num lote menor." });
+  });
+
   it("sends again to the same slot, and takes 409 not_uploading as bytes that had arrived", async () => {
     const { queue, puts, reserved, uploaded, statuses, state } = setup();
     queue.add(filesNamed("a"));
