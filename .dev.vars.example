@@ -1,0 +1,7 @@
+# Copy to .dev.vars for local development. Never commit real values.
+ADMIN_EMAIL=admin@example.com
+ADMIN_SETUP_CODE=change-me
+SESSION_SECRET=change-me
+# Optional: turns on "Entrar com Google".
+# GOOGLE_CLIENT_ID=
+# GOOGLE_CLIENT_SECRET=

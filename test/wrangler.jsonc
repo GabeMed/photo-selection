@@ -1,0 +1,12 @@
+// The Worker under test, with the face-service container replaced by the double in fake-face-service.ts.
+{
+  "name": "photo-selection-test",
+  "main": "./worker.ts",
+  // The newest date the workerd bundled with @cloudflare/vitest-pool-workers accepts.
+  "compatibility_date": "2026-08-22",
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [{ "binding": "DB", "database_name": "photo-selection", "database_id": "test" }],
+  "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "photo-selection" }],
+  "durable_objects": { "bindings": [{ "name": "FACE_SERVICE", "class_name": "FaceService" }] },
+  "exports": { "FaceService": { "type": "durable-object", "storage": "sqlite" } }
+}

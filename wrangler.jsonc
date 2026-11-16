@@ -1,0 +1,42 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "photo-selection",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-09-29",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  "assets": {
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "secrets": { "required": ["ADMIN_EMAIL", "ADMIN_SETUP_CODE", "SESSION_SECRET"] },
+  "triggers": { "crons": ["* * * * *"] },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "photo-selection",
+      // Placeholder: replaced with the id printed by `wrangler d1 create photo-selection`.
+      "database_id": "280a6f68-25df-4185-9165-a76f89454a36",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "photo-selection" }],
+  "containers": [
+    {
+      "name": "photo-selection-face-service",
+      "class_name": "FaceService",
+      "scheduling_policy": "durable_object",
+      "images": { "base": { "dockerfile": "./face-service/Dockerfile" } }
+    }
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "FACE_SERVICE", "class_name": "FaceService" }]
+  },
+  "exports": {
+    "FaceService": {
+      "type": "durable-object",
+      "storage": "sqlite",
+      "container": "photo-selection-face-service"
+    }
+  }
+}

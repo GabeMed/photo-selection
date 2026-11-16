@@ -1,0 +1,220 @@
+@import "tailwindcss" source(none);
+@source "../";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* Brand fonts ship with the library so consumers inherit them via styles.css. */
+@font-face {
+  font-family: "Fredoka";
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url("./assets/fonts/fredoka-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Fredoka";
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url("./assets/fonts/fredoka-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Nunito";
+  font-style: normal;
+  font-weight: 200 1000;
+  font-display: swap;
+  src: url("./assets/fonts/nunito-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Nunito";
+  font-style: normal;
+  font-weight: 200 1000;
+  font-display: swap;
+  src: url("./assets/fonts/nunito-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@theme inline {
+  --font-display: "Fredoka", "Nunito", system-ui, sans-serif;
+  --font-body: "Nunito", system-ui, sans-serif;
+  --font-sans: "Nunito", system-ui, sans-serif;
+
+  --radius-sm: calc(var(--radius) - 8px);
+  --radius-md: calc(var(--radius) - 4px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 6px);
+  --radius-2xl: calc(var(--radius) + 14px);
+  --radius-pill: 999px;
+
+  --shadow-pop: 4px 4px 0 0 var(--tinta);
+  --shadow-pop-sm: 2px 2px 0 0 var(--tinta);
+  --shadow-pop-lg: 6px 6px 0 0 var(--tinta);
+  --shadow-flutuante: 0 -8px 24px -8px oklch(0.2 0.03 30 / 25%);
+
+  --container-coluna: 30rem;
+  --shadow-sticker: 0 0 0 var(--sticker-inner) var(--palco-foreground), 0 0 0 var(--sticker-outline) var(--tinta), var(--shadow-pop);
+  --rotate-sticker-esquerda: -4deg;
+  --rotate-sticker-direita: 4deg;
+  --rotate-sticker-suave: -2deg;
+  --text-logo-sm: 1.5rem;
+  --text-logo-md: 2.5rem;
+  --text-logo-lg: 3.75rem;
+
+  --color-tinta: var(--tinta);
+  --color-papel: var(--papel);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-sucesso: var(--sucesso);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-palco: var(--palco);
+  --color-palco-foreground: var(--palco-foreground);
+
+  --color-pessoa-turquesa: var(--pessoa-turquesa);
+  --color-pessoa-laranja: var(--pessoa-laranja);
+  --color-pessoa-amarelo: var(--pessoa-amarelo);
+  --color-pessoa-verde: var(--pessoa-verde);
+  --color-pessoa-azul: var(--pessoa-azul);
+  --color-pessoa-roxo: var(--pessoa-roxo);
+}
+
+:root {
+  --shadow-pop: 4px 4px 0 0 var(--tinta);
+  --shadow-sticker: 0 0 0 var(--sticker-inner) var(--palco-foreground), 0 0 0 var(--sticker-outline) var(--tinta), var(--shadow-pop);
+  --sticker-inner: 4px;
+  --sticker-outline: 6px;
+  --sticker-ink-width: 2px;
+  --sticker-stroke: 5;
+  --sticker-duration: 420ms;
+  --sticker-lift: -0.25rem;
+  --sticker-fold: 1rem;
+  --sticker: var(--shadow-sticker);
+  --radius: 1.25rem;
+  --tinta: oklch(0.22 0.03 300);
+  --papel: oklch(0.975 0.025 85);
+  --background: var(--papel);
+  --foreground: var(--tinta);
+  --card: oklch(1 0 0);
+  --card-foreground: var(--tinta);
+  --popover: oklch(1 0 0);
+  --popover-foreground: var(--tinta);
+  --primary: oklch(0.66 0.25 355);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.92 0.06 85);
+  --secondary-foreground: var(--tinta);
+  --muted: oklch(0.94 0.03 85);
+  --muted-foreground: oklch(0.48 0.04 300);
+  --accent: oklch(0.88 0.17 95);
+  --accent-foreground: var(--tinta);
+  --destructive: oklch(0.6 0.22 28);
+  --destructive-foreground: oklch(1 0 0);
+  --sucesso: oklch(0.72 0.18 150);
+  --border: var(--tinta);
+  --input: var(--tinta);
+  --ring: oklch(0.6 0.2 265);
+  --palco: oklch(0 0 0);
+  --palco-foreground: oklch(1 0 0);
+
+  --pessoa-turquesa: oklch(0.78 0.13 195);
+  --pessoa-laranja: oklch(0.75 0.17 55);
+  --pessoa-amarelo: oklch(0.88 0.17 95);
+  --pessoa-verde: oklch(0.78 0.17 150);
+  --pessoa-azul: oklch(0.72 0.14 240);
+  --pessoa-roxo: oklch(0.65 0.2 300);
+}
+
+.dark {
+  --background: var(--papel);
+  --foreground: var(--tinta);
+  --tinta: oklch(0.97 0.02 85);
+  --papel: oklch(0.2 0.03 300);
+  --card: oklch(0.27 0.035 300);
+  --card-foreground: var(--tinta);
+  --popover: oklch(0.27 0.035 300);
+  --popover-foreground: var(--tinta);
+  --secondary: oklch(0.32 0.04 300);
+  --muted: oklch(0.3 0.035 300);
+  --muted-foreground: oklch(0.75 0.03 300);
+}
+
+@utility border-grosso {
+  border-width: 2.5px;
+  border-style: solid;
+}
+@utility border-b-grosso {
+  border-bottom-width: 2.5px;
+  border-bottom-style: solid;
+}
+
+@layer base {
+  * { border-color: var(--color-border); }
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-body);
+    -webkit-tap-highlight-color: transparent;
+  }
+  h1, h2, h3, h4 { font-family: var(--font-display); }
+}
+
+@utility sticker {
+  box-shadow: var(--sticker);
+  rotate: var(--rotate-sticker-suave);
+  animation: sticker-entrada var(--sticker-duration) ease-out both;
+  transition: translate 150ms ease, box-shadow 150ms ease;
+  &:active { translate: 0 var(--sticker-lift); }
+}
+/* Die-cut sticker: the cut line is drawn in the artwork, so no box outline. */
+@utility sticker-recorte {
+  rotate: var(--rotate-sticker-suave);
+  animation: sticker-entrada var(--sticker-duration) ease-out both;
+  transition: translate var(--sticker-duration) ease-out;
+  &:active { translate: 0 var(--sticker-lift); }
+}
+@utility sticker-esquerda { rotate: var(--rotate-sticker-esquerda); }
+@utility sticker-direita { rotate: var(--rotate-sticker-direita); }
+@utility sticker-logo {
+  &::after {
+    content: "";
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: var(--sticker-fold);
+    height: var(--sticker-fold);
+    background: var(--palco-foreground);
+    border-top: var(--sticker-ink-width) solid var(--tinta);
+    border-left: var(--sticker-ink-width) solid var(--tinta);
+    border-radius: var(--radius-sm) 0 var(--radius-md) 0;
+    rotate: var(--rotate-sticker-direita);
+  }
+}
+@utility logo-interrogacao { font-size: 1.3em; }
+@keyframes sticker-entrada {
+  0% { opacity: 0; transform: translateY(0.5rem) scale(0.9); }
+  65% { opacity: 1; transform: translateY(-0.25rem) scale(1.04); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sticker, .sticker-recorte { animation: none; transition: none; }
+  .sticker:active, .sticker-recorte:active { translate: none; }
+  .animate-spin { animation: none; }
+}
