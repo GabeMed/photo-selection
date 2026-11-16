@@ -114,8 +114,7 @@ function defaultFilename(contentType: string): string {
 }
 
 /** One call does the slot and the bytes, so a failed transfer gives its reserved space back at once. Returns the duplicate's original, if any. */
-async function storeReservedOriginal(env: Env, photoId: string, body: ReadableStream, length: number): Promise<string | null> {
-  const photo = (await env.DB.prepare("SELECT * FROM photos WHERE id = ?1").bind(photoId).first<PhotoRow>())!;
+async function storeReservedOriginal(env: Env, photo: PhotoRow, body: ReadableStream, length: number): Promise<string | null> {
   try {
     return await storeOriginal(env, photo, body, length);
   } catch (error) {
@@ -144,7 +143,7 @@ tokenUploadRoutes.post("/:token", async (c) => {
   // An Atalho variable that came out empty sends the header with nothing in it.
   const rawFilename = c.req.header("x-filename")?.trim();
   const filename = rawFilename ? normalizeFilename(rawFilename) : defaultFilename(file.contentType);
-  const photoId = await reservePhotoSlot(c.env.DB, {
+  const photo = await reservePhotoSlot(c.env.DB, {
     groupId: member.group_id,
     userId: member.user_id,
     filename,
@@ -152,7 +151,7 @@ tokenUploadRoutes.post("/:token", async (c) => {
     sizeBytes: sized.length,
     contentHash: null,
   });
-  const duplicateOf = await storeReservedOriginal(c.env, photoId, file.body, sized.length);
+  const duplicateOf = await storeReservedOriginal(c.env, photo, file.body, sized.length);
   if (duplicateOf) return c.json({ ok: true, duplicate: true, photoId: duplicateOf });
-  return c.json({ ok: true, photoId });
+  return c.json({ ok: true, photoId: photo.id });
 });

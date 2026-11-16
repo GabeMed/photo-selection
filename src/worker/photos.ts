@@ -41,13 +41,17 @@ export async function findPhotoAlreadyInGroup(db: D1Database, groupId: string, c
   return row?.id ?? null;
 }
 
+/** SHA-256 of a stream, in lowercase hex. */
+async function hashStream(stream: ReadableStream): Promise<string> {
+  const digest = new crypto.DigestStream("SHA-256");
+  await stream.pipeTo(digest);
+  return [...new Uint8Array(await digest.digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 /** SHA-256 of a stored object, in lowercase hex; null when the object is not there. */
 async function hashStoredObject(bucket: R2Bucket, key: string): Promise<string | null> {
   const object = await bucket.get(key);
-  if (!object) return null;
-  const digest = new crypto.DigestStream("SHA-256");
-  await object.body.pipeTo(digest);
-  return [...new Uint8Array(await digest.digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  return object && hashStream(object.body);
 }
 
 const HASH_BACKFILL_BATCH = 10;
@@ -212,6 +216,24 @@ export async function deletePhoto(env: Env, photo: PhotoRow): Promise<void> {
 export const unsupportedType = () => new ApiError(415, "unsupported_type", "Formato não aceito. Envie JPEG, HEIC, PNG ou WebP.");
 
 /**
+ * A tee holds in memory whatever one branch has read and the other has not, so only files that fit
+ * there with room to spare are hashed while they are written; larger ones are read back afterwards.
+ */
+export const IN_FLIGHT_HASH_MAX_BYTES = 32 * 1024 * 1024;
+
+async function putAndHash(bucket: R2Bucket, key: string, body: ReadableStream, photo: PhotoRow) {
+  const options = { httpMetadata: { contentType: photo.content_type } };
+  if (photo.size_bytes > IN_FLIGHT_HASH_MAX_BYTES) {
+    const stored = await bucket.put(key, body, options);
+    return { stored, contentHash: await hashStoredObject(bucket, key) };
+  }
+  // Each branch of the tee keeps the body's known length, so R2 still takes it while the other branch is hashed.
+  const [toStore, toHash] = body.tee();
+  const [stored, contentHash] = await Promise.all([bucket.put(key, toStore, options), hashStream(toHash)]);
+  return { stored, contentHash };
+}
+
+/**
  * `body` must have a known length: a request body, or the readable side of a `FixedLengthStream`.
  * Returns the photo already in the group when these bytes are a duplicate; this upload is then discarded.
  */
@@ -219,13 +241,11 @@ export async function storeOriginal(env: Env, photo: PhotoRow, body: ReadableStr
   const mismatch = new ApiError(400, "size_mismatch", "O tamanho enviado é diferente do tamanho declarado.");
   if (!body || contentLength !== photo.size_bytes) throw mismatch;
   const key = photoKeys(photo).original;
-  const stored = await env.BUCKET.put(key, body, { httpMetadata: { contentType: photo.content_type } });
+  const { stored, contentHash } = await putAndHash(env.BUCKET, key, body, photo);
   if (stored.size !== photo.size_bytes) {
     await env.BUCKET.delete(key);
     throw mismatch;
   }
-  // Read back from the bucket: hashing the request stream would cost the known length R2 needs.
-  const contentHash = await hashStoredObject(env.BUCKET, key);
   if (!contentHash) throw notUploading();
   if (photo.content_hash && contentHash !== photo.content_hash) {
     await discardUpload(env, photo);
@@ -483,7 +503,7 @@ photoRoutes.post("/groups/:id/photos", async (c) => {
   if (!ALLOWED_CONTENT_TYPES.has(contentType)) throw unsupportedType();
   const existing = contentHash && (await findPhotoAlreadyInGroup(c.env.DB, group.id, contentHash));
   if (existing) return c.json({ duplicate: true, photoId: existing });
-  const id = await reservePhotoSlot(c.env.DB, { groupId: group.id, userId: user.id, filename, contentType, sizeBytes, contentHash });
+  const { id } = await reservePhotoSlot(c.env.DB, { groupId: group.id, userId: user.id, filename, contentType, sizeBytes, contentHash });
   return c.json({ photo: { id }, uploadUrl: `/api/photos/${id}/original` });
 });
 

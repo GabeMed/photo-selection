@@ -1,4 +1,5 @@
 import { changedRows, newId, newToken, nowIso } from "./db";
+import type { PhotoRow } from "./groups";
 import { ApiError, formatBytes } from "./http";
 import { loadSettings, settingSql } from "./settings";
 
@@ -26,19 +27,19 @@ export interface PhotoSlotRequest {
   contentHash: string | null;
 }
 
-/** Decides and reserves in one statement, so concurrent requests cannot jointly pass a limit. */
-export async function reservePhotoSlot(db: D1Database, request: PhotoSlotRequest): Promise<string> {
-  const id = newId();
-  const inserted = await db
+/** Decides and reserves in one statement, so concurrent requests cannot jointly pass a limit. Returns the reserved row. */
+export async function reservePhotoSlot(db: D1Database, request: PhotoSlotRequest): Promise<PhotoRow> {
+  const reserved = await db
     .prepare(
       `INSERT INTO photos (id, group_id, uploader_id, filename, content_type, size_bytes, status, attempts, created_at, status_at, content_hash)
        SELECT ?1, ?2, ?3, ?4, ?5, ?6, 'enviando', 0, ?7, ?7, ?9
        WHERE ?6 <= ${settingSql("max_file_bytes")}
          AND ${groupUsedBytesSql("?2")} + ?6 <= (SELECT quota_bytes FROM groups WHERE id = ?2)
-         AND ${monthUsedBytesSql("?3", "?8")} + ?6 <= ${settingSql("user_monthly_quota_bytes")}`,
+         AND ${monthUsedBytesSql("?3", "?8")} + ?6 <= ${settingSql("user_monthly_quota_bytes")}
+       RETURNING *`,
     )
     .bind(
-      id,
+      newId(),
       request.groupId,
       request.userId,
       request.filename,
@@ -48,9 +49,9 @@ export async function reservePhotoSlot(db: D1Database, request: PhotoSlotRequest
       monthStartIso(),
       request.contentHash,
     )
-    .run();
-  if (changedRows(inserted) === 0) throw await explainRefusal(db, request);
-  return id;
+    .first<PhotoRow>();
+  if (!reserved) throw await explainRefusal(db, request);
+  return reserved;
 }
 
 async function explainRefusal(db: D1Database, request: PhotoSlotRequest): Promise<ApiError> {
