@@ -102,6 +102,14 @@ export interface PhotoSlot {
   uploadUrl: string;
 }
 
+/** The group already had a photo with the same bytes; nothing new was kept. */
+export interface DuplicatePhoto {
+  duplicate: true;
+  photoId: string;
+}
+
+export const isDuplicate = (answer: object): answer is DuplicatePhoto => "duplicate" in answer;
+
 export interface AdminSettings {
   maxGroups: number;
   defaultGroupQuotaBytes: number;
@@ -261,17 +269,20 @@ export interface PhotoSlotRequest {
   filename: string;
   contentType: string;
   sizeBytes: number;
+  /** SHA-256 of the file in lowercase hex; left out when it could not be computed. */
+  contentHash?: string;
 }
 
 export const reservePhotoSlot = (groupId: string, request: PhotoSlotRequest) =>
-  sendJsonFor<PhotoSlot>("POST", `/api/groups/${groupId}/photos`, request);
+  sendJsonFor<PhotoSlot | DuplicatePhoto>("POST", `/api/groups/${groupId}/photos`, request);
 
 export const UPLOAD_STALL_TIMEOUT_MS = 60_000;
 
 /** Async so that a body that cannot be read becomes a rejection the upload promise adopts. */
-async function parseUploadedPhoto(status: number, bodyText: string): Promise<Photo> {
+async function parseUploadedPhoto(status: number, bodyText: string): Promise<Photo | DuplicatePhoto> {
   try {
-    return (JSON.parse(bodyText) as { photo: Photo }).photo;
+    const answer = JSON.parse(bodyText) as { photo: Photo } | DuplicatePhoto;
+    return isDuplicate(answer) ? answer : answer.photo;
   } catch {
     // A proxy in front of the Worker can answer 200 with a body that is not the API's JSON.
     throw unreadableResponse(status);
@@ -282,7 +293,7 @@ async function parseUploadedPhoto(status: number, bodyText: string): Promise<Pho
  * Sends the file itself as the body, untouched. XMLHttpRequest because fetch reports no upload progress.
  * A request that makes no progress for UPLOAD_STALL_TIMEOUT_MS is aborted, so it always settles.
  */
-export function uploadOriginal(uploadUrl: string, file: File, onProgress: (sentBytes: number) => void): Promise<Photo> {
+export function uploadOriginal(uploadUrl: string, file: File, onProgress: (sentBytes: number) => void): Promise<Photo | DuplicatePhoto> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     let stallTimer: ReturnType<typeof setTimeout> | undefined;

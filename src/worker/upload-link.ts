@@ -113,11 +113,11 @@ function defaultFilename(contentType: string): string {
   return `foto-${stamp}-${suffix}.${EXTENSIONS[contentType]}`;
 }
 
-/** One call does the slot and the bytes, so a failed transfer gives its reserved space back at once. */
-async function storeReservedOriginal(env: Env, photoId: string, body: ReadableStream, length: number): Promise<void> {
+/** One call does the slot and the bytes, so a failed transfer gives its reserved space back at once. Returns the duplicate's original, if any. */
+async function storeReservedOriginal(env: Env, photoId: string, body: ReadableStream, length: number): Promise<string | null> {
   const photo = (await env.DB.prepare("SELECT * FROM photos WHERE id = ?1").bind(photoId).first<PhotoRow>())!;
   try {
-    await storeOriginal(env, photo, body, length);
+    return await storeOriginal(env, photo, body, length);
   } catch (error) {
     await deletePhoto(env, photo);
     throw error;
@@ -150,7 +150,9 @@ tokenUploadRoutes.post("/:token", async (c) => {
     filename,
     contentType: file.contentType,
     sizeBytes: sized.length,
+    contentHash: null,
   });
-  await storeReservedOriginal(c.env, photoId, file.body, sized.length);
+  const duplicateOf = await storeReservedOriginal(c.env, photoId, file.body, sized.length);
+  if (duplicateOf) return c.json({ ok: true, duplicate: true, photoId: duplicateOf });
   return c.json({ ok: true, photoId });
 });

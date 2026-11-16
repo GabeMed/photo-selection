@@ -22,6 +22,8 @@ export interface PhotoSlotRequest {
   filename: string;
   contentType: string;
   sizeBytes: number;
+  /** The SHA-256 the client declared, checked when the bytes arrive; null when it declared none. */
+  contentHash: string | null;
 }
 
 /** Decides and reserves in one statement, so concurrent requests cannot jointly pass a limit. */
@@ -29,13 +31,23 @@ export async function reservePhotoSlot(db: D1Database, request: PhotoSlotRequest
   const id = newId();
   const inserted = await db
     .prepare(
-      `INSERT INTO photos (id, group_id, uploader_id, filename, content_type, size_bytes, status, attempts, created_at, status_at)
-       SELECT ?1, ?2, ?3, ?4, ?5, ?6, 'enviando', 0, ?7, ?7
+      `INSERT INTO photos (id, group_id, uploader_id, filename, content_type, size_bytes, status, attempts, created_at, status_at, content_hash)
+       SELECT ?1, ?2, ?3, ?4, ?5, ?6, 'enviando', 0, ?7, ?7, ?9
        WHERE ?6 <= ${settingSql("max_file_bytes")}
          AND ${groupUsedBytesSql("?2")} + ?6 <= (SELECT quota_bytes FROM groups WHERE id = ?2)
          AND ${monthUsedBytesSql("?3", "?8")} + ?6 <= ${settingSql("user_monthly_quota_bytes")}`,
     )
-    .bind(id, request.groupId, request.userId, request.filename, request.contentType, request.sizeBytes, nowIso(), monthStartIso())
+    .bind(
+      id,
+      request.groupId,
+      request.userId,
+      request.filename,
+      request.contentType,
+      request.sizeBytes,
+      nowIso(),
+      monthStartIso(),
+      request.contentHash,
+    )
     .run();
   if (changedRows(inserted) === 0) throw await explainRefusal(db, request);
   return id;

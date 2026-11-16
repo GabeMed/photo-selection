@@ -108,8 +108,9 @@ export async function upload(user: Session, groupId: string, bytes: Uint8Array<A
   return photo.id;
 }
 
+/** Each call sends a different file: the same bytes twice in a group would be a duplicate. */
 export const uploadScripted = (user: Session, groupId: string, script: FakeScript, filename?: string) =>
-  upload(user, groupId, scriptedImage(script), filename);
+  upload(user, groupId, scriptedImage(script, randomBytes(16)), filename);
 
 export async function addSelfie(user: Session, script: FakeScript): Promise<Response> {
   return api("/api/me/selfies", { as: user, body: scriptedImage(script), headers: { "content-type": "image/jpeg" } });

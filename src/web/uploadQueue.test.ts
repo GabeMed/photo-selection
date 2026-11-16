@@ -1,34 +1,46 @@
 import { describe, expect, it } from "vitest";
-import { ApiError, type Photo } from "./api";
+import { ApiError, type DuplicatePhoto, type Photo, type PhotoSlotRequest } from "./api";
 import { photoOf } from "./testing";
-import { createUploadQueue, type UploadApi, type UploadQueueState } from "./uploadQueue";
+import { createUploadQueue, sha256OfFile, type UploadApi, type UploadQueueState, MAX_HASHED_BYTES } from "./uploadQueue";
 
 interface PutCall {
   uploadUrl: string;
   file: File;
-  resolve: (photo: Photo) => void;
+  resolve: (photo: Photo | DuplicatePhoto) => void;
   reject: (error: unknown) => void;
 }
 
 const networkError = () => new ApiError(0, "network_error", "Sem conexão.");
 
+interface DoubleOptions {
+  /** Files whose slot request answers that the group already has them. */
+  duplicates?: string[];
+  hashFile?: (file: File) => Promise<string>;
+}
+
+/** Stands in for the real hash, which settles later than the queue tests wait. */
+const hashOfName = async (file: File) => `hash-${file.name}`;
+
 /** A double of the API: slots are numbered in the order asked, and every PUT waits for the test to settle it. */
-function setup(reserveErrors: Record<string, ApiError> = {}) {
+function setup(reserveErrors: Record<string, ApiError> = {}, { duplicates = [], hashFile = hashOfName }: DoubleOptions = {}) {
   const reserved: string[] = [];
+  const requests: PhotoSlotRequest[] = [];
   const puts: PutCall[] = [];
   const uploaded: (Photo | null)[] = [];
   let state: UploadQueueState = { items: [], stopMessage: null };
   const api: UploadApi = {
     reservePhotoSlot: async (_groupId, request) => {
+      requests.push(request);
       if (reserveErrors[request.filename]) throw reserveErrors[request.filename];
+      if (duplicates.includes(request.filename)) return { duplicate: true, photoId: `old-${request.filename}` };
       reserved.push(request.filename);
       return { photo: { id: `p${reserved.length}` }, uploadUrl: `/slot/${reserved.length}` };
     },
     uploadOriginal: (uploadUrl, file) => new Promise((resolve, reject) => puts.push({ uploadUrl, file, resolve, reject })),
   };
-  const queue = createUploadQueue({ api, groupId: "g1", onChange: (next) => (state = next), onUploaded: (photo) => uploaded.push(photo) });
+  const queue = createUploadQueue({ api, hashFile, groupId: "g1", onChange: (next) => (state = next), onUploaded: (photo) => uploaded.push(photo) });
   const statuses = () => Object.fromEntries(state.items.map((item) => [item.file.name, item.status]));
-  return { queue, reserved, puts, uploaded, statuses, state: () => state };
+  return { queue, reserved, requests, puts, uploaded, statuses, state: () => state };
 }
 
 const filesNamed = (...names: string[]) => names.map((name) => new File(["bytes"], name, { type: "image/jpeg" }));
@@ -159,5 +171,60 @@ describe("upload queue", () => {
     await settle();
     expect(state().items[0]).toMatchObject({ status: "failed", retryable: true });
     expect(state().items[1].status).toBe("uploading");
+  });
+
+  it("marks a file the group already has as duplicate, apart from failures, without sending it or offering a retry", async () => {
+    const { queue, puts, uploaded, statuses } = setup({}, { duplicates: ["b"] });
+    queue.add(filesNamed("a", "b", "c"));
+    await settle();
+    expect(statuses()).toEqual({ a: "uploading", b: "duplicate", c: "uploading" });
+    expect(puts.map((put) => put.file.name)).toEqual(["a", "c"]);
+
+    puts[0].resolve(photoOf({ id: "p1" }));
+    puts[1].resolve({ duplicate: true, photoId: "p1" });
+    await settle();
+    expect(statuses()).toEqual({ a: "done", b: "duplicate", c: "duplicate" });
+    expect(uploaded).toEqual([photoOf({ id: "p1" })]);
+
+    queue.retry();
+    await settle();
+    expect(statuses()).toEqual({ a: "done", b: "duplicate", c: "duplicate" });
+    expect(puts).toHaveLength(2);
+  });
+
+  it("declares the hash of each file, hashing only the files about to be sent", async () => {
+    const hashed: string[] = [];
+    const { queue, requests } = setup({}, { hashFile: (file) => (hashed.push(file.name), hashOfName(file)) });
+    queue.add(filesNamed("a", "b", "c", "d", "e"));
+    await settle();
+    expect(hashed).toEqual(["a", "b", "c"]);
+    expect(requests.map((request) => request.contentHash)).toEqual(["hash-a", "hash-b", "hash-c"]);
+  });
+
+  it("hashes a file as SHA-256 in lowercase hex", async () => {
+    expect(await sha256OfFile(new File(["bytes"], "a"))).toBe("277089d91c0bdf4f2e6862ba7e4a07605119431f5d13f726dd352b06f1b206a9");
+  });
+
+  it("does not read a very large file to hash it", async () => {
+    const hashed: string[] = [];
+    const { queue, requests } = setup({}, { hashFile: (file) => (hashed.push(file.name), hashOfName(file)) });
+    const [large, small] = filesNamed("grande", "pequena");
+    Object.defineProperty(large, "size", { value: MAX_HASHED_BYTES + 1 });
+    queue.add([large, small]);
+    await settle();
+    expect(hashed).toEqual(["pequena"]);
+    expect(requests.map((request) => request.contentHash)).toEqual([undefined, "hash-pequena"]);
+  });
+
+  it("sends the file without a hash when hashing fails", async () => {
+    const { queue, requests, puts, statuses } = setup({}, { hashFile: () => Promise.reject(new RangeError("Out of memory")) });
+    queue.add(filesNamed("a"));
+    await settle();
+    expect(requests).toEqual([{ filename: "a", contentType: "image/jpeg", sizeBytes: 5, contentHash: undefined }]);
+    expect(puts.map((put) => put.file.name)).toEqual(["a"]);
+
+    puts[0].resolve(photoOf({ id: "p1" }));
+    await settle();
+    expect(statuses()).toEqual({ a: "done" });
   });
 });

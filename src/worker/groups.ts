@@ -19,6 +19,7 @@ export interface PhotoRow {
   attempts: number;
   created_at: string;
   status_at: string;
+  content_hash: string | null;
 }
 
 /** A photo the group can see: not deleted and with its bytes already received. Requires the alias `p`. */

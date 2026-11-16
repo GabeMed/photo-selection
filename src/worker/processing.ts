@@ -5,6 +5,7 @@ import { fillMissingScores, rescore } from "./matching";
 import {
   completeProcessing,
   failExhaustedPhotos,
+  fillMissingContentHashes,
   hasReservablePhoto,
   isPhotoGone,
   photoKeys,
@@ -29,6 +30,7 @@ export async function drain(env: Env): Promise<void> {
   await sweepPhotoStates(env);
   await deleteExpiredSessions(env.DB);
   await processWaitingPhotos(env, deadline);
+  await fillMissingContentHashes(env, deadline);
   await fillMissingScores(env.DB);
 }
 

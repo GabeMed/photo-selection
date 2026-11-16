@@ -1,6 +1,7 @@
-import { ApiError, type Photo, type PhotoSlot, type PhotoSlotRequest } from "./api";
+import { ApiError, isDuplicate, type DuplicatePhoto, type Photo, type PhotoSlot, type PhotoSlotRequest } from "./api";
 
-export type UploadStatus = "queued" | "uploading" | "done" | "failed" | "skipped";
+/** `duplicate`: the group already had the same file, so it was not sent again. Not a failure. */
+export type UploadStatus = "queued" | "uploading" | "done" | "duplicate" | "failed" | "skipped";
 
 export interface UploadItem {
   key: number;
@@ -21,12 +22,14 @@ export interface UploadQueueState {
 
 /** The two API calls of an upload; a parameter so the queue runs against a double in tests. */
 export interface UploadApi {
-  reservePhotoSlot: (groupId: string, request: PhotoSlotRequest) => Promise<PhotoSlot>;
-  uploadOriginal: (uploadUrl: string, file: File, onProgress: (sentBytes: number) => void) => Promise<Photo>;
+  reservePhotoSlot: (groupId: string, request: PhotoSlotRequest) => Promise<PhotoSlot | DuplicatePhoto>;
+  uploadOriginal: (uploadUrl: string, file: File, onProgress: (sentBytes: number) => void) => Promise<Photo | DuplicatePhoto>;
 }
 
 export interface UploadQueueOptions {
   api: UploadApi;
+  /** SHA-256 of the file in lowercase hex; a parameter so tests can make it fail. */
+  hashFile: (file: File) => Promise<string>;
   groupId: string;
   onChange: (state: UploadQueueState) => void;
   /** `null` when the bytes had arrived in an earlier attempt whose answer was lost. */
@@ -65,6 +68,7 @@ function contentTypeOf(file: File): string {
  */
 const PLACEHOLDER_SIGNATURE = "bplist00";
 const PLACEHOLDER_MAX_BYTES = 1024;
+export const MAX_HASHED_BYTES = 32 * 1024 * 1024;
 
 async function assertDelivered(file: File): Promise<void> {
   if (file.size > PLACEHOLDER_MAX_BYTES) return;
@@ -72,9 +76,14 @@ async function assertDelivered(file: File): Promise<void> {
   throw new ApiError(0, "not_delivered", "O iPhone não entregou essa foto. Escolhe ela de novo, num lote menor.");
 }
 
+export async function sha256OfFile(file: File): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", await file.arrayBuffer()));
+  return [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 export const isWaitingForRetry = (item: UploadItem) => item.status === "skipped" || (item.status === "failed" && item.retryable);
 
-export function createUploadQueue({ api, groupId, onChange, onUploaded }: UploadQueueOptions): UploadQueue {
+export function createUploadQueue({ api, hashFile, groupId, onChange, onUploaded }: UploadQueueOptions): UploadQueue {
   let items: UploadItem[] = [];
   let stopMessage: string | null = null;
   let active = 0;
@@ -114,9 +123,26 @@ export function createUploadQueue({ api, groupId, onChange, onUploaded }: Upload
     if (BATCH_STOPPING_CODES.has(error.code)) stopBatch(error.message);
   };
 
+  /** Without a hash the server still finds the duplicate, only after the bytes arrive. */
+  const hashOrNothing = async (file: File) => {
+    // Hashing reads the whole file into memory, and a phone's tab dies without an exception when that
+    // runs out. The server finds duplicates on arrival anyway.
+    if (file.size > MAX_HASHED_BYTES) return undefined;
+    try {
+      return await hashFile(file);
+    } catch (error) {
+      // Reading a large file can run out of memory, and some browsers lack crypto.subtle outside HTTPS.
+      console.warn("sending without a content hash", error);
+      return undefined;
+    }
+  };
+
+  /** Hashed right before its own slot request, so only the files in flight are ever read into memory. */
   const sendToNewSlot = async ({ key, file }: UploadItem) => {
     await assertDelivered(file);
-    const slot = await api.reservePhotoSlot(groupId, { filename: file.name, contentType: contentTypeOf(file), sizeBytes: file.size });
+    const contentHash = await hashOrNothing(file);
+    const slot = await api.reservePhotoSlot(groupId, { filename: file.name, contentType: contentTypeOf(file), sizeBytes: file.size, contentHash });
+    if (isDuplicate(slot)) return slot;
     set(key, { uploadUrl: slot.uploadUrl });
     return api.uploadOriginal(slot.uploadUrl, file, (sentBytes) => reportProgress(key, sentBytes));
   };
@@ -137,6 +163,7 @@ export function createUploadQueue({ api, groupId, onChange, onUploaded }: Upload
 
   const upload = async (item: UploadItem) => {
     const photo = await (item.uploadUrl ? sendToReservedSlot(item, item.uploadUrl) : sendToNewSlot(item));
+    if (photo && isDuplicate(photo)) return patch(item.key, { status: "duplicate", sentBytes: item.file.size, uploadUrl: null });
     patch(item.key, { status: "done", sentBytes: item.file.size, uploadUrl: null });
     onUploaded(photo);
   };

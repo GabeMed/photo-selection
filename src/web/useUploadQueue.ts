@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import * as api from "./api";
 import type { Photo } from "./api";
-import { createUploadQueue, type UploadQueue, type UploadQueueState } from "./uploadQueue";
+import { createUploadQueue, sha256OfFile, type UploadQueue, type UploadQueueState } from "./uploadQueue";
 
 export interface UploadQueueView extends UploadQueueState, UploadQueue {
   busy: boolean;
@@ -13,7 +13,7 @@ export function useUploadQueue(groupId: string, onUploaded: (photo: Photo | null
   const onUploadedRef = useRef(onUploaded);
   onUploadedRef.current = onUploaded;
   const [queue] = useState(() =>
-    createUploadQueue({ api, groupId, onChange: setState, onUploaded: (photo) => onUploadedRef.current(photo) }),
+    createUploadQueue({ api, hashFile: sha256OfFile, groupId, onChange: setState, onUploaded: (photo) => onUploadedRef.current(photo) }),
   );
   const busy = state.items.some((item) => item.status === "queued" || item.status === "uploading");
   return { ...state, ...queue, busy };

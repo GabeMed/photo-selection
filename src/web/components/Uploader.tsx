@@ -8,7 +8,8 @@ import { isWaitingForRetry, type UploadItem, type UploadStatus } from "../upload
 import { useUploadQueue, type UploadQueueView } from "../useUploadQueue";
 import { FilePickButton, Notice, SecondaryButton } from "./ui";
 
-const sentBytesOf = (item: UploadItem) => (item.status === "done" ? item.file.size : item.status === "uploading" ? item.sentBytes : 0);
+const sentBytesOf = (item: UploadItem) =>
+  item.status === "done" || item.status === "duplicate" ? item.file.size : item.status === "uploading" ? item.sentBytes : 0;
 
 /** Failed files listed one by one; the rest are only counted. */
 const FAILED_ROWS_SHOWN = 3;
@@ -66,11 +67,19 @@ function UploadRows({ items }: { items: UploadItem[] }) {
 interface BatchCounts {
   total: number;
   done: number;
+  duplicates: number;
   notSent: number;
 }
 
+/** "320 fotos subiram. 80 já estavam no grupo." */
+function sentSummary(done: number, duplicates: number): string {
+  if (duplicates === 0) return `${plural(done, "foto subiu", "fotos subiram")}. A galera vai amar.`;
+  if (done === 0) return duplicates === 1 ? "A foto já estava no grupo." : `As ${duplicates} fotos já estavam no grupo.`;
+  return `${plural(done, "foto subiu", "fotos subiram")}. ${plural(duplicates, "já estava no grupo", "já estavam no grupo")}.`;
+}
+
 function BatchStatus({ queue, counts }: { queue: UploadQueueView; counts: BatchCounts }) {
-  const { total, done, notSent } = counts;
+  const { total, done, duplicates, notSent } = counts;
   if (queue.stopMessage) {
     return (
       <EstadoFotos variant="erro" size="sm" titulo="O envio parou">
@@ -78,20 +87,23 @@ function BatchStatus({ queue, counts }: { queue: UploadQueueView; counts: BatchC
         {queue.busy
           ? "Terminando as fotos que já tavam subindo…"
           : `${plural(done, "foto subiu", "fotos subiram")} e ${plural(notSent, "não subiu", "não subiram")}.`}
+        {!queue.busy && duplicates > 0 && ` ${plural(duplicates, "já estava no grupo", "já estavam no grupo")}.`}
       </EstadoFotos>
     );
   }
-  if (queue.busy) return <EstadoFotos variant="esperando" size="sm" titulo={`${done} de ${plural(total, "foto enviada", "fotos enviadas")}`} />;
+  if (queue.busy) {
+    return <EstadoFotos variant="esperando" size="sm" titulo={`${done + duplicates} de ${plural(total, "foto enviada", "fotos enviadas")}`} />;
+  }
   if (notSent > 0) {
     return (
       <EstadoFotos variant="erro" size="sm" titulo="Ih, deu ruim…">
-        {plural(notSent, "foto não subiu", "fotos não subiram")}. As outras {done} já tão no grupo.
+        {plural(notSent, "foto não subiu", "fotos não subiram")}. As outras {done + duplicates} já tão no grupo.
       </EstadoFotos>
     );
   }
   return (
     <EstadoFotos variant="pronto" size="sm" titulo="Achei!">
-      {plural(done, "foto subiu", "fotos subiram")}. A galera vai amar.
+      {sentSummary(done, duplicates)}
     </EstadoFotos>
   );
 }
@@ -122,7 +134,7 @@ export function Uploader({ groupId, showAction, onUploaded, onSettled }: Uploade
   };
 
   const count = (status: UploadStatus) => queue.items.filter((item) => item.status === status).length;
-  const counts = { total: queue.items.length, done: count("done"), notSent: count("failed") + count("skipped") };
+  const counts = { total: queue.items.length, done: count("done"), duplicates: count("duplicate"), notSent: count("failed") + count("skipped") };
   const retryable = queue.items.filter(isWaitingForRetry).length;
   const totalBytes = queue.items.reduce((total, item) => total + item.file.size, 0);
   const sentBytes = queue.items.reduce((total, item) => total + sentBytesOf(item), 0);
@@ -135,6 +147,7 @@ export function Uploader({ groupId, showAction, onUploaded, onSettled }: Uploade
           fotos quebradas. Enquanto um lote sobe, <strong>+ Mais fotos</strong> já aceita o próximo. No seletor, toca em{" "}
           <strong>Opções</strong> e escolhe o formato <strong>Atual</strong> pra mandar o original. Depois de tocar em Adicionar, o iPhone
           prepara as fotos sem mostrar nada: espera, pode levar alguns minutos. Deixa a tela ligada e essa aba aberta até o envio acabar.
+          Pra muitas fotos de uma vez, usa o Atalho, logo abaixo.
         </Notice>
       )}
 

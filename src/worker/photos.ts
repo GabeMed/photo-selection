@@ -28,12 +28,54 @@ export function photoKeys(photo: PhotoLocation) {
   return { original: `${prefix}/original`, preview: `${prefix}/preview.jpg`, thumb: `${prefix}/thumb.jpg` };
 }
 
+// ---- Duplicates: the one rule of "already in the group". ----
+
+/** Another listed photo of the group with the same content. `?1` is the group, `?2` the content hash. */
+const ALREADY_IN_GROUP_SQL = `SELECT p.id FROM photos p WHERE p.group_id = ?1 AND p.content_hash = ?2 AND ${LISTED_PHOTO}`;
+
+export async function findPhotoAlreadyInGroup(db: D1Database, groupId: string, contentHash: string): Promise<string | null> {
+  const row = await db
+    .prepare(`${ALREADY_IN_GROUP_SQL} ORDER BY p.created_at, p.id LIMIT 1`)
+    .bind(groupId, contentHash)
+    .first<{ id: string }>();
+  return row?.id ?? null;
+}
+
+/** SHA-256 of a stored object, in lowercase hex; null when the object is not there. */
+async function hashStoredObject(bucket: R2Bucket, key: string): Promise<string | null> {
+  const object = await bucket.get(key);
+  if (!object) return null;
+  const digest = new crypto.DigestStream("SHA-256");
+  await object.body.pipeTo(digest);
+  return [...new Uint8Array(await digest.digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+const HASH_BACKFILL_BATCH = 10;
+
+/** Photos sent before content hashes existed get theirs a few at a time; until then they are not found as duplicates. */
+export async function fillMissingContentHashes(env: Env, deadline: number): Promise<void> {
+  const { results } = await env.DB.prepare(
+    `SELECT p.id, p.group_id FROM photos p WHERE ${LISTED_PHOTO} AND p.content_hash IS NULL ORDER BY RANDOM() LIMIT ${HASH_BACKFILL_BATCH}`,
+  ).all<PhotoLocation>();
+  for (const photo of results) {
+    if (Date.now() >= deadline) return;
+    const contentHash = await hashStoredObject(env.BUCKET, photoKeys(photo).original);
+    // A photo whose original is gone stays without a hash; the random order keeps it from holding the others back.
+    if (!contentHash) continue;
+    await env.DB.prepare("UPDATE photos SET content_hash = ?2 WHERE id = ?1 AND content_hash IS NULL").bind(photo.id, contentHash).run();
+  }
+}
+
 // ---- State transitions: every one is conditional on the state it read. ----
 
-async function markReceived(db: D1Database, photo: PhotoRow): Promise<boolean> {
+/** Refused when the group already has these bytes, in the same statement, so of two equal uploads only the first is kept. */
+async function markReceived(db: D1Database, photo: PhotoRow, contentHash: string): Promise<boolean> {
   const updated = await db
-    .prepare("UPDATE photos SET status = 'recebida', status_at = ?2 WHERE id = ?1 AND status = 'enviando' AND status_at = ?3")
-    .bind(photo.id, nowIso(), photo.status_at)
+    .prepare(
+      `UPDATE photos SET status = 'recebida', status_at = ?4, content_hash = ?2
+       WHERE id = ?3 AND status = 'enviando' AND status_at = ?5 AND NOT EXISTS (${ALREADY_IN_GROUP_SQL})`,
+    )
+    .bind(photo.group_id, contentHash, photo.id, nowIso(), photo.status_at)
     .run();
   return changedRows(updated) === 1;
 }
@@ -169,8 +211,11 @@ export async function deletePhoto(env: Env, photo: PhotoRow): Promise<void> {
 
 export const unsupportedType = () => new ApiError(415, "unsupported_type", "Formato não aceito. Envie JPEG, HEIC, PNG ou WebP.");
 
-/** `body` must have a known length: a request body, or the readable side of a `FixedLengthStream`. */
-export async function storeOriginal(env: Env, photo: PhotoRow, body: ReadableStream | null, contentLength: number): Promise<void> {
+/**
+ * `body` must have a known length: a request body, or the readable side of a `FixedLengthStream`.
+ * Returns the photo already in the group when these bytes are a duplicate; this upload is then discarded.
+ */
+export async function storeOriginal(env: Env, photo: PhotoRow, body: ReadableStream | null, contentLength: number): Promise<string | null> {
   const mismatch = new ApiError(400, "size_mismatch", "O tamanho enviado é diferente do tamanho declarado.");
   if (!body || contentLength !== photo.size_bytes) throw mismatch;
   const key = photoKeys(photo).original;
@@ -179,10 +224,33 @@ export async function storeOriginal(env: Env, photo: PhotoRow, body: ReadableStr
     await env.BUCKET.delete(key);
     throw mismatch;
   }
-  if (await markReceived(env.DB, photo)) return;
-  const rowExists = await env.DB.prepare("SELECT 1 FROM photos WHERE id = ?1").bind(photo.id).first();
-  if (!rowExists) await env.BUCKET.delete(key);
+  // Read back from the bucket: hashing the request stream would cost the known length R2 needs.
+  const contentHash = await hashStoredObject(env.BUCKET, key);
+  if (!contentHash) throw notUploading();
+  if (photo.content_hash && contentHash !== photo.content_hash) {
+    await discardUpload(env, photo);
+    throw new ApiError(400, "hash_mismatch", "O arquivo chegou diferente do que foi anunciado. Tente de novo.");
+  }
+  if (await markReceived(env.DB, photo, contentHash)) return null;
+  const existing = await findPhotoAlreadyInGroup(env.DB, photo.group_id, contentHash);
+  // Its own id means an earlier attempt to this same slot was the one that arrived: not a duplicate.
+  if (existing && existing !== photo.id) {
+    await discardUpload(env, photo);
+    return existing;
+  }
+  await deleteOriginalIfOrphan(env, photo);
   throw notUploading();
+}
+
+/** Gives the slot back: the row while it is still uploading, then the object once no row owns it. */
+async function discardUpload(env: Env, photo: PhotoRow): Promise<void> {
+  await env.DB.prepare("DELETE FROM photos WHERE id = ?1 AND status = 'enviando'").bind(photo.id).run();
+  await deleteOriginalIfOrphan(env, photo);
+}
+
+async function deleteOriginalIfOrphan(env: Env, photo: PhotoRow): Promise<void> {
+  const rowExists = await env.DB.prepare("SELECT 1 FROM photos WHERE id = ?1").bind(photo.id).first();
+  if (!rowExists) await env.BUCKET.delete(photoKeys(photo).original);
 }
 
 const notUploading = () => new ApiError(409, "not_uploading", "Essa foto não está aguardando envio.");
@@ -379,6 +447,15 @@ async function setTag(db: D1Database, user: User, photo: PhotoRow, value: unknow
     .run();
 }
 
+function readContentHash(body: Record<string, unknown>): string | null {
+  const value = body.contentHash;
+  if (value === undefined) return null;
+  if (typeof value !== "string" || !/^[0-9a-f]{64}$/i.test(value)) {
+    throw invalidRequest('O campo "contentHash" precisa ser o SHA-256 do arquivo, em 64 caracteres hexadecimais.');
+  }
+  return value.toLowerCase();
+}
+
 function readPhotoIds(body: Record<string, unknown>): string[] {
   const ids = body.photoIds;
   if (!Array.isArray(ids) || ids.length === 0 || !ids.every((id) => typeof id === "string")) {
@@ -402,8 +479,11 @@ photoRoutes.post("/groups/:id/photos", async (c) => {
   const filename = normalizeFilename(body.filename);
   const contentType = readText(body, "contentType", 100).toLowerCase();
   const sizeBytes = readPositiveInteger(body, "sizeBytes");
+  const contentHash = readContentHash(body);
   if (!ALLOWED_CONTENT_TYPES.has(contentType)) throw unsupportedType();
-  const id = await reservePhotoSlot(c.env.DB, { groupId: group.id, userId: user.id, filename, contentType, sizeBytes });
+  const existing = contentHash && (await findPhotoAlreadyInGroup(c.env.DB, group.id, contentHash));
+  if (existing) return c.json({ duplicate: true, photoId: existing });
+  const id = await reservePhotoSlot(c.env.DB, { groupId: group.id, userId: user.id, filename, contentType, sizeBytes, contentHash });
   return c.json({ photo: { id }, uploadUrl: `/api/photos/${id}/original` });
 });
 
@@ -419,7 +499,8 @@ photoRoutes.put("/photos/:id/original", async (c) => {
   const photo = await loadPhotoFor(c.env.DB, user, c.req.param("id"));
   if (photo.uploader_id !== user.id) throw new ApiError(403, "forbidden", "Só quem pediu o envio pode enviar o arquivo.");
   if (photo.status !== "enviando") throw notUploading();
-  await storeOriginal(c.env, photo, c.req.raw.body, Number(c.req.header("content-length")));
+  const duplicateOf = await storeOriginal(c.env, photo, c.req.raw.body, Number(c.req.header("content-length")));
+  if (duplicateOf) return c.json({ duplicate: true, photoId: duplicateOf });
   return c.json({ photo: await loadPhotoView(c.env.DB, user, photo.id) });
 });
 
