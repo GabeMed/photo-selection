@@ -243,6 +243,10 @@ export const getInvite = (token: string) => getJson<Invite>(`/api/invites/${toke
 export const joinInvite = async (token: string) =>
   (await sendJsonFor<{ group: InvitedGroup }>("POST", `/api/invites/${token}/join`)).group;
 
+/** The person's link for the iOS Shortcut; `rotate` replaces it and the old one stops working. */
+export const getUploadLink = async (groupId: string, rotate = false) =>
+  (await sendJsonFor<{ uploadLink: string }>("POST", `/api/groups/${groupId}/upload-link`, { rotate })).uploadLink;
+
 // ---- Photos ----
 
 export function listGroupPhotos(groupId: string, filter: PhotoFilter, cursor?: string): Promise<PhotoPage> {

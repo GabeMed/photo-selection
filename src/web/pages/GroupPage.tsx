@@ -5,9 +5,11 @@ import type { GroupDetail, Photo, PhotoFilter } from "../api";
 import { PhotoGrid } from "../components/PhotoGrid";
 import { PhotoViewer } from "../components/PhotoViewer";
 import { SelectionBar } from "../components/SelectionBar";
+import { ShortcutUpload } from "../components/ShortcutUpload";
 import { Chip, CopyButton, ErrorNotice, inviteUrl, Loading, PageHeader, SecondaryButton, UsageBar } from "../components/ui";
 import { Uploader } from "../components/Uploader";
 import { Avatar, EstadoFotos, PilhaAvatares, type Pessoa } from "../design-system";
+import { isAppleTouchDevice } from "../download";
 import { plural } from "../format";
 import { useLoad, useSelection } from "../hooks";
 import { groupPersonOf, type PersonOf } from "../people";
@@ -118,6 +120,7 @@ function GroupView({ groupId }: { groupId: string }) {
       </div>
 
       <Uploader groupId={groupId} showAction={selected.length === 0} onUploaded={uploaded} onSettled={group.reload} />
+      {isAppleTouchDevice() && <ShortcutUpload groupId={groupId} />}
 
       <section className="flex flex-col gap-3" aria-label="Fotos do grupo">
         <FilterBar group={group.data} personOf={personOf} filter={filter} onChange={changeFilter} />

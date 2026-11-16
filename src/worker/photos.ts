@@ -15,7 +15,7 @@ const MAX_FILENAME_LENGTH = 255;
 // The ZIP is written without ZIP64 records, which caps the archive at 4 GiB.
 const MAX_ZIP_BYTES = 4 * 1024 ** 3 - 64 * 1024 ** 2;
 const MAX_ZIP_ENTRIES = 1000;
-const ALLOWED_CONTENT_TYPES = new Set(["image/jpeg", "image/heic", "image/heif", "image/png", "image/webp"]);
+export const ALLOWED_CONTENT_TYPES = new Set(["image/jpeg", "image/heic", "image/heif", "image/png", "image/webp"]);
 const DERIVED_CACHE = "private, max-age=31536000, immutable";
 
 interface PhotoLocation {
@@ -167,11 +167,14 @@ export async function deletePhoto(env: Env, photo: PhotoRow): Promise<void> {
 
 // ---- Upload and download ----
 
-async function storeOriginal(env: Env, photo: PhotoRow, request: Request): Promise<void> {
+export const unsupportedType = () => new ApiError(415, "unsupported_type", "Formato não aceito. Envie JPEG, HEIC, PNG ou WebP.");
+
+/** `body` must have a known length: a request body, or the readable side of a `FixedLengthStream`. */
+export async function storeOriginal(env: Env, photo: PhotoRow, body: ReadableStream | null, contentLength: number): Promise<void> {
   const mismatch = new ApiError(400, "size_mismatch", "O tamanho enviado é diferente do tamanho declarado.");
-  if (!request.body || Number(request.headers.get("content-length")) !== photo.size_bytes) throw mismatch;
+  if (!body || contentLength !== photo.size_bytes) throw mismatch;
   const key = photoKeys(photo).original;
-  const stored = await env.BUCKET.put(key, request.body, { httpMetadata: { contentType: photo.content_type } });
+  const stored = await env.BUCKET.put(key, body, { httpMetadata: { contentType: photo.content_type } });
   if (stored.size !== photo.size_bytes) {
     await env.BUCKET.delete(key);
     throw mismatch;
@@ -399,9 +402,7 @@ photoRoutes.post("/groups/:id/photos", async (c) => {
   const filename = normalizeFilename(body.filename);
   const contentType = readText(body, "contentType", 100).toLowerCase();
   const sizeBytes = readPositiveInteger(body, "sizeBytes");
-  if (!ALLOWED_CONTENT_TYPES.has(contentType)) {
-    throw new ApiError(415, "unsupported_type", "Formato não aceito. Envie JPEG, HEIC, PNG ou WebP.");
-  }
+  if (!ALLOWED_CONTENT_TYPES.has(contentType)) throw unsupportedType();
   const id = await reservePhotoSlot(c.env.DB, { groupId: group.id, userId: user.id, filename, contentType, sizeBytes });
   return c.json({ photo: { id }, uploadUrl: `/api/photos/${id}/original` });
 });
@@ -418,7 +419,7 @@ photoRoutes.put("/photos/:id/original", async (c) => {
   const photo = await loadPhotoFor(c.env.DB, user, c.req.param("id"));
   if (photo.uploader_id !== user.id) throw new ApiError(403, "forbidden", "Só quem pediu o envio pode enviar o arquivo.");
   if (photo.status !== "enviando") throw notUploading();
-  await storeOriginal(c.env, photo, c.req.raw);
+  await storeOriginal(c.env, photo, c.req.raw.body, Number(c.req.header("content-length")));
   return c.json({ photo: await loadPhotoView(c.env.DB, user, photo.id) });
 });
 
